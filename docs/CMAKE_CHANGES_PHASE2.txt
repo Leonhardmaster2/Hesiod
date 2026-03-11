@@ -1,18 +1,32 @@
 # CMAKE CHANGES — Phase 2
-# Status: NO CHANGES NEEDED
 #
+# ═══ Phase A+B: NO CHANGES NEEDED ═══════════════════════════════════════════
 # Both VkCompute/CMakeLists.txt and HighMap/CMakeLists.txt use GLOB_RECURSE
-# for source files, so new .cpp files are picked up automatically:
+# for source files, so new .cpp files are picked up automatically.
 #
-# VkCompute new files (auto-discovered):
-#   - VkCompute/src/gpu_buffer.cpp
-#   - VkCompute/src/gpu_buffer_registry.cpp
+# ═══ Phase C: CHANGES REQUIRED ══════════════════════════════════════════════
+# Apply all at once before the Phase C build checkpoint.
 #
-# HighMap new files (auto-discovered):
-#   - HighMap/src/gpu_vulkan/gpu_array.cpp
+# ─── 1. external/CMakeLists.txt ──────────────────────────────────────────────
+# Add after `add_subdirectory(QTerrainRenderer)`:
+#   add_subdirectory(VkTerrainRenderer)
 #
-# Benchmark test (auto-discovered by tests/CMakeLists.txt glob):
-#   - tests/benchmark_pipeline/CMakeLists.txt  (creates benchmark_pipeline target)
-#   - tests/benchmark_pipeline/main.cpp
+# ─── 2. Hesiod/CMakeLists.txt ───────────────────────────────────────────────
+# Add to target_link_libraries (after qterrain-renderer):
+#   vkterrain-renderer
+# Add to target_compile_definitions:
+#   PUBLIC HESIOD_VULKAN_RENDERER
 #
-# No manual CMake modifications required for Phase A.
+# ─── 3. VkCompute/VkCompute/CMakeLists.txt ──────────────────────────────────
+# Add to target_compile_definitions:
+#   PUBLIC VKCOMPUTE_ENABLE_GRAPHICS
+# This enables surface/swapchain extensions in DeviceManager.
+#
+# ─── New files (auto-discovered by GLOB_RECURSE in new CMakeLists) ──────────
+# external/VkTerrainRenderer/CMakeLists.txt
+# external/VkTerrainRenderer/VkTerrainRenderer/CMakeLists.txt
+# external/VkTerrainRenderer/VkTerrainRenderer/include/vktr/*.hpp
+# external/VkTerrainRenderer/VkTerrainRenderer/src/*.cpp
+# external/VkTerrainRenderer/VkTerrainRenderer/include/vktr/shaders/*.vert/*.frag
+#
+# Shaders compile to: ${CMAKE_BINARY_DIR}/shaders/*.spv (same dir as compute shaders)

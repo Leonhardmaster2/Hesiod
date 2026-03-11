@@ -1,10 +1,10 @@
 # Phase 2 Progress — GPU-Resident Pipeline
 
-## Current Phase: B (Parallel Graph Execution)
-## Current Step: B.4 — Build and validate
-## Last Completed: B.3 — Thread safety + GraphNode wiring
+## Current Phase: C (Vulkan Renderer)
+## Current Step: COMPLETE
+## Last Completed: C.7 — Build and validate
 ## Blockers: none
-## Last Updated: 2026-03-11
+## Last Updated: 2026-03-12
 
 ## Phase A Status
 
@@ -138,3 +138,76 @@ AFTER (with GpuBuffer registered):
 | `VkCompute/src/run.cpp` | MODIFIED | Thread-safe cmd alloc/free/submit |
 | `VkCompute/src/gpu_buffer.cpp` | MODIFIED | Thread-safe cmd alloc/free/submit |
 | `Hesiod/src/model/graph/graph_node.cpp` | MODIFIED | Enable parallel update |
+
+## Phase C Status
+
+### Completed Steps
+
+**C.1: Analyze existing renderer** -- DONE
+- OpenGL 3.3 renderer: shadow mapping, AO, fog, water, instanced meshes
+- 6 shader pairs (shadow_map_lit, depth, viewer2d, etc.)
+- Integration via Viewer3D::update_renderer() with set_heightmap_geometry()
+
+**C.2: DeviceManager graphics support** -- DONE
+- Added VK_KHR_surface + VK_KHR_win32_surface instance extensions
+- Added VK_KHR_swapchain device extension
+- Queue family selection: prefer graphics+compute combined (NVIDIA family 0)
+- New methods: create_surface(), destroy_surface(), queue_supports_present()
+- Gated behind `VKCOMPUTE_ENABLE_GRAPHICS` compile define
+
+**C.3: Vulkan GLSL 460 shaders** -- DONE
+- terrain.vert: Reads heightmap from SSBO (zero-copy), generates position/normal/UV
+- terrain.frag: Blinn-Phong lighting, PCF shadows, HBAO, albedo/normal textures
+- shadow_depth.vert/frag: Depth-only pass from light POV
+- viewer2d.vert/frag: Fullscreen triangle with colormaps (gray/viridis/turbo/magma)
+
+**C.4: VkTerrainRenderer library** -- DONE
+- New library: external/VkTerrainRenderer/
+- RenderWidget: QWidget subclass with Vulkan surface, swapchain, render pass
+- Swapchain: FIFO present mode, dynamic resize handling
+- Render pass: color + D32 depth, single subpass
+- Graphics pipeline: dynamic viewport/scissor, no vertex input (SSBO-driven)
+- Command buffers: per-swapchain-image, reset each frame
+- Sync: semaphores for acquire/present, per-image fences
+
+**C.5: Descriptor sets and UBOs** -- DONE
+- Set 0: FrameUBO (matrices + camera + light) + HeightmapSSBO + MaterialUBO
+- Set 1: 4 combined image samplers (albedo, hmap, normal, shadow_map)
+- UBOs: persistently mapped host-visible buffers, updated every frame
+- SSBO: device-local, upload via staging buffer (legacy) or direct bind (zero-copy)
+
+**C.6: Hesiod Viewer3D integration** -- DONE
+- viewer_3d.hpp: conditional include (vktr vs qtr) via HESIOD_VULKAN_RENDERER
+- RendererWidget typedef: maps to vktr::RenderWidget or qtr::RenderWidget
+- Same public API: set_heightmap_geometry, set_texture, clear, json_from/to
+- New zero-copy method: set_heightmap_buffer(GpuBuffer*, w, h)
+
+**C.7: Build and validate** -- DONE
+- Fixed windows.h include issue: `vulkan_win32.h` moved out of public header
+  to avoid IN/OUT macro conflicts with GNode PortType enum
+- Added NOMINMAX + WIN32_LEAN_AND_MEAN guards in device_manager.cpp
+- Full build succeeds: hesiod.exe + vkterrain-renderer.lib + all 6 SPIR-V shaders
+- Regression: 48 OK / 29 NOK (same as Phase 1 baseline, no regressions)
+- VkCompute init test: PASS (graphics support enabled, queue family 0 GRAPHICS+COMPUTE)
+
+### Key Files Created/Modified
+
+| File | Status | Purpose |
+|------|--------|---------|
+| `VkCompute/include/vk_compute/device_manager.hpp` | MODIFIED | Graphics extensions, create_surface() |
+| `VkCompute/src/device_manager.cpp` | MODIFIED | Surface/swapchain, queue selection |
+| `VkCompute/VkCompute/CMakeLists.txt` | MODIFIED | VKCOMPUTE_ENABLE_GRAPHICS define |
+| `VkTerrainRenderer/CMakeLists.txt` | NEW | Root CMake |
+| `VkTerrainRenderer/VkTerrainRenderer/CMakeLists.txt` | NEW | Library + shader compilation |
+| `VkTerrainRenderer/.../include/vktr/render_widget.hpp` | NEW | Vulkan renderer widget |
+| `VkTerrainRenderer/.../src/render_widget.cpp` | NEW | Full Vulkan renderer impl (~1400 lines) |
+| `VkTerrainRenderer/.../include/vktr/shaders/terrain.vert` | NEW | SSBO heightmap vertex shader |
+| `VkTerrainRenderer/.../include/vktr/shaders/terrain.frag` | NEW | Lit terrain fragment shader |
+| `VkTerrainRenderer/.../include/vktr/shaders/shadow_depth.vert` | NEW | Shadow depth pass |
+| `VkTerrainRenderer/.../include/vktr/shaders/shadow_depth.frag` | NEW | Shadow depth pass |
+| `VkTerrainRenderer/.../include/vktr/shaders/viewer2d.vert` | NEW | 2D colormap vertex |
+| `VkTerrainRenderer/.../include/vktr/shaders/viewer2d.frag` | NEW | 2D colormap fragment |
+| `external/CMakeLists.txt` | MODIFIED | add_subdirectory(VkTerrainRenderer) |
+| `Hesiod/CMakeLists.txt` | MODIFIED | Link vkterrain-renderer, HESIOD_VULKAN_RENDERER |
+| `Hesiod/include/.../viewer_3d.hpp` | MODIFIED | Conditional vktr/qtr include |
+| `Hesiod/src/.../viewer_3d.cpp` | MODIFIED | Use RendererWidget typedef |

@@ -83,7 +83,11 @@ target_link_libraries(
           Qt6::Widgets
           Qt6::OpenGLWidgets
           qterrain-renderer
+          vkterrain-renderer
           qtexture_downloader)
+
+# Enable Vulkan renderer (Phase 2C)
+target_compile_definitions(${PROJECT_NAME} PUBLIC HESIOD_VULKAN_RENDERER)
 
 # ------------------------------
 # Deploy Qt DLLs (Windows)

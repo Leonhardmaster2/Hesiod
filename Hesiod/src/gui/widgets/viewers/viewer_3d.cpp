@@ -6,7 +6,11 @@
 #include "highmap/morphology.hpp"
 #include "highmap/range.hpp"
 
-#include "qtr/render_widget.hpp"
+#ifdef HESIOD_VULKAN_RENDERER
+#  include "vktr/render_widget.hpp"
+#else
+#  include "qtr/render_widget.hpp"
+#endif
 
 #include "hesiod/app/hesiod_application.hpp"
 #include "hesiod/gui/widgets/graph_node_widget.hpp"
@@ -232,7 +236,7 @@ void Viewer3D::setup_layout()
   int          row_count = get_row_count(grid);
 
   // add viewer
-  this->p_renderer = new qtr::RenderWidget("");
+  this->p_renderer = new RendererWidget("");
   grid->addWidget(dynamic_cast<QWidget *>(p_renderer), 0, 0, row_count, 1);
 
   this->combo_container->setParent(this->p_renderer);

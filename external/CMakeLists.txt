@@ -26,5 +26,8 @@ add_subdirectory(Attributes)
 # QTerrainRenderer
 add_subdirectory(QTerrainRenderer)
 
+# VkTerrainRenderer (Vulkan renderer — Phase 2C)
+add_subdirectory(VkTerrainRenderer)
+
 # QTextureDownloader
 add_subdirectory(QTextureDownloader)

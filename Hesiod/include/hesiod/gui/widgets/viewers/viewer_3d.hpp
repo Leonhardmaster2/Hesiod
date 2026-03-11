@@ -7,7 +7,11 @@
 
 #include "nlohmann/json.hpp"
 
-#include "qtr/render_widget.hpp"
+#ifdef HESIOD_VULKAN_RENDERER
+#  include "vktr/render_widget.hpp"
+#else
+#  include "qtr/render_widget.hpp"
+#endif
 
 #include "hesiod/gui/widgets/viewers/viewer.hpp"
 
@@ -15,6 +19,12 @@ namespace hesiod
 {
 
 class GraphNodeWidget; // forward
+
+#ifdef HESIOD_VULKAN_RENDERER
+using RendererWidget = vktr::RenderWidget;
+#else
+using RendererWidget = qtr::RenderWidget;
+#endif
 
 // =====================================
 // Viewer3D
@@ -46,8 +56,8 @@ private:
   ViewerNodeParam get_default_view_param() const override;
   void            update_renderer() override;
 
-  ViewerType         viewer_type;
-  qtr::RenderWidget *p_renderer = nullptr;
+  ViewerType       viewer_type;
+  RendererWidget  *p_renderer = nullptr;
 };
 
 } // namespace hesiod
