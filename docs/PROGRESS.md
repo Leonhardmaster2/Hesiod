@@ -1,9 +1,9 @@
 # Conversion Progress
 
-## Current Phase: 2
-## Current Step: 2.1 — Shader compilation setup + Group A (_common.glsl)
-## Last Completed: Phase 1 complete — VkCompute wrapper, validation test PASSES
-## Next Up: Convert Group A common helpers → _common.glsl, then Group B simple shaders
+## Current Phase: 3
+## Current Step: 3.1 — Update *_gpu.cpp files to use vkcompute::Run
+## Last Completed: Group E (11 shaders: thermal, thermal_with_bedrock, thermal_auto_bedrock, thermal_inflate, thermal_rib, thermal_ridge, thermal_scree, hydraulic_particle, hydraulic_schott, jump_flooding, mean_shift) — ALL 66 SHADERS COMPILE OK
+## Next Up: Phase 3 — rewrite ~24 *_gpu.cpp files to use vkcompute::Run
 ## Blockers: none
 ## Skipped: none
 ## Last Updated: 2026-03-11 UTC
@@ -23,20 +23,21 @@
 - Shader compiler: Vulkan::glslc
 - VkCompute standalone build: /c/Dev/HesiodVulkan/vkcompute-build/
 - MSVC requires /utf-8 flag (for spdlog/fmt)
+- Qt6: /c/Qt/6.10.2/msvc2022_64/
 
 ## Phase 2 Kernel Conversion Status
-Group A — Common helpers (→ _common.glsl):   [ ] _common_index  [ ] _common_math  [ ] _common_rand  [ ] _common_sort
-Group B — Simple per-pixel:                   [ ] gradient_norm  [ ] maximum_local  [ ] maximum_smooth  [ ] minimum_smooth
-                                              [ ] mean_local  [ ] median_3x3  [ ] ruggedness  [ ] rugosity
-                                              [ ] smooth_cpulse  [ ] expand  [ ] rotate  [ ] warp  [ ] laplace
-Group C — Noise generators:                   [ ] noise  [ ] gavoronoise  [ ] gabor_wave  [ ] voronoi_base
-                                              [ ] voronoi_main  [ ] voronoi_fbm  [ ] voronoi_edge_distance
-                                              [ ] vorolines  [ ] voronoise  [ ] vororand_main  [ ] wavelet_noise
-Group D — Complex terrain:                    [ ] advection_particle  [ ] advection_warp  [ ] blend_poisson_bf
-                                              [ ] flow_direction_d8  [ ] generate_riverbed  [ ] hemisphere_field
-                                              [ ] interpolate_array  [ ] mountain_range_radial  [ ] normal_displacement
-                                              [ ] plateau  [ ] polygon_field  [ ] sdf_2d_polyline
-                                              [ ] skeleton  [ ] strata  [ ] rifts
-Group E — Erosion (complex):                  [ ] thermal  [ ] thermal_inflate  [ ] thermal_rib  [ ] thermal_ridge
-                                              [ ] thermal_scree  [ ] hydraulic_particle  [ ] hydraulic_schott
-                                              [ ] jump_flooding  [ ] mean_shift
+Group A — Common helpers (→ _common.glsl):   [x] _common_index  [x] _common_math  [x] _common_rand  [x] _common_sort
+Group B — Simple per-pixel:                   [x] gradient_norm  [x] maximum_local  [x] maximum_smooth  [x] minimum_smooth
+                                              [x] mean_local  [x] median_3x3  [x] ruggedness  [x] rugosity
+                                              [x] smooth_cpulse  [x] expand  [x] rotate  [x] warp  [x] laplace
+Group C — Noise generators:                   [x] noise  [x] gavoronoise  [x] gabor_wave  [x] voronoi_base
+                                              [x] voronoi_main  [x] voronoi_fbm  [x] voronoi_edge_distance
+                                              [x] vorolines  [x] voronoise  [x] vororand_main  [x] wavelet_noise
+Group D — Complex terrain:                    [x] advection_particle  [x] advection_warp  [x] blend_poisson_bf
+                                              [x] flow_direction_d8  [x] generate_riverbed  [x] hemisphere_field
+                                              [x] interpolate_array  [x] mountain_range_radial  [x] normal_displacement
+                                              [x] plateau  [x] polygon_field  [x] sdf_2d_polyline
+                                              [x] skeleton  [x] strata  [x] rifts
+Group E — Erosion (complex):                  [x] thermal  [x] thermal_inflate  [x] thermal_rib  [x] thermal_ridge
+                                              [x] thermal_scree  [x] hydraulic_particle  [x] hydraulic_schott
+                                              [x] jump_flooding  [x] mean_shift
