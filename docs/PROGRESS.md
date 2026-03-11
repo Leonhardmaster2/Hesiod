@@ -1,12 +1,20 @@
 # Conversion Progress
 
 ## Current Phase: 3
-## Current Step: 3.1 — Update *_gpu.cpp files to use vkcompute::Run
-## Last Completed: Group E (11 shaders: thermal, thermal_with_bedrock, thermal_auto_bedrock, thermal_inflate, thermal_rib, thermal_ridge, thermal_scree, hydraulic_particle, hydraulic_schott, jump_flooding, mean_shift) — ALL 66 SHADERS COMPILE OK
-## Next Up: Phase 3 — rewrite ~24 *_gpu.cpp files to use vkcompute::Run
+## Current Step: 3.1 — COMPLETE. All *_gpu.cpp converted; highmap.lib builds OK. Full Hesiod build in progress.
+## Last Completed: Phase 3 Step 3.1 — all 34 *_gpu.cpp files converted from clwrapper::Run → vkcompute::Run. highmap.lib BUILDS SUCCESSFULLY.
+## Next Up: Phase 3 Step 3.2 — verify full Hesiod build; then Phase 4 (new GPU paths)
 ## Blockers: none
 ## Skipped: none
 ## Last Updated: 2026-03-11 UTC
+
+## Phase 3 Build Fixes Applied
+- HighMap/CMakeLists.txt: made OPENCL_SOURCES conditional on HIGHMAP_ENABLE_OPENCL AND NOT HIGHMAP_ENABLE_VULKAN
+- HighMap/external/CMakeLists.txt: made CLWrapper add_subdirectory conditional
+- HighMap root CMakeLists.txt: made find_package(OpenCL) conditional on backend selection
+- 6 *_gpu.cpp files: expanded Vec2<float>/Vec4<float> bind_arguments args to individual .x/.y / .a/.b/.c/.d members
+- CMake build requires: -DNANOFLANN_BUILD_EXAMPLES=OFF -DNANOFLANN_BUILD_TESTS=OFF -DTIFF_INCLUDE_DIR/LIBRARY
+- CMake recursion depth env var: CMAKE_MAXIMUM_RECURSION_DEPTH=2000 needed for Qt6.10.2
 
 ## Phase 1 Summary — DONE ✅
 - VkCompute library: external/HighMap/external/VkCompute/
