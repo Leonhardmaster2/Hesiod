@@ -114,6 +114,15 @@ file(COPY ${CMAKE_SOURCE_DIR}/Hesiod/data
 file(COPY ${CMAKE_SOURCE_DIR}/Hesiod/data
      DESTINATION ${EXECUTABLE_OUTPUT_PATH}/../.)
 
+# Multi-config generators (MSVC) put the exe in a config subdirectory
+# (e.g., bin/Release/). Copy data there too so relative paths work.
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+          "${CMAKE_SOURCE_DIR}/Hesiod/data"
+          "$<TARGET_FILE_DIR:${PROJECT_NAME}>/data"
+  COMMENT "Copying data folder next to executable..."
+)
+
 # ------------------------------
 # Build information messages
 # ------------------------------
