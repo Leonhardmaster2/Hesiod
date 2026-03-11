@@ -43,6 +43,9 @@ GraphNode::GraphNode(const std::string &id, const std::shared_ptr<GraphConfig> &
   };
 
   this->set_update_callback(lambda);
+
+  // Enable wavefront parallel graph execution
+  this->set_parallel_update(true);
 }
 
 std::string GraphNode::add_node(const std::string &node_type)

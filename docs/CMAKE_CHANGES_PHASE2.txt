@@ -1,0 +1,18 @@
+# CMAKE CHANGES — Phase 2
+# Status: NO CHANGES NEEDED
+#
+# Both VkCompute/CMakeLists.txt and HighMap/CMakeLists.txt use GLOB_RECURSE
+# for source files, so new .cpp files are picked up automatically:
+#
+# VkCompute new files (auto-discovered):
+#   - VkCompute/src/gpu_buffer.cpp
+#   - VkCompute/src/gpu_buffer_registry.cpp
+#
+# HighMap new files (auto-discovered):
+#   - HighMap/src/gpu_vulkan/gpu_array.cpp
+#
+# Benchmark test (auto-discovered by tests/CMakeLists.txt glob):
+#   - tests/benchmark_pipeline/CMakeLists.txt  (creates benchmark_pipeline target)
+#   - tests/benchmark_pipeline/main.cpp
+#
+# No manual CMake modifications required for Phase A.
