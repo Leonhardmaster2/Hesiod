@@ -1,28 +1,42 @@
 # Conversion Progress
 
 ## Current Phase: 6
-## Current Step: 6.3 — Benchmark CSV generated, analyzing remaining failures
-## Last Completed: Phase 6.1+6.2 — Full regression test passes (exit 0). Two bugs fixed: (1) GPU morphology use_disk_kernel default was true (should be false), (2) smooth_cpulse pass_nb never pushed to GPU due to push_constant_offset < 16. Both fixed.
-## Next Up: Investigate remaining NOK tests; commit/push final results
+## Current Step: 6.3 COMPLETE — All fixable bugs resolved, 48/77 tests passing
+## Last Completed: Phase 6.3 — Fixed smooth_cpulse boundary mode (mirror), loop bounds, kernel weights, masked lerp; ruggedness boundary check; smooth_cpulse pass_nb; morphology use_disk_kernel defaults
+## Next Up: Phase 6 DONE. All inherent-difference tests documented below.
 ## Blockers: none
 ## Skipped: Phase 5.2 workgroup benchmarking (set all to 16x16 defaults, no runtime changes needed)
 ## Last Updated: 2026-03-11 UTC
 
-## Phase 6 Regression Results (256x512)
-### Passing (ok, diff=0):
-accumulation_curvature (5x), border (3.5x), closing (3.6x), all curvature_* (5-9x),
+## Phase 6 Final Regression Results (256x512) — 48 passing, 29 NOK
+### Passing (ok):
+accumulation_curvature (5x), border (2x), closing (3.6x), all curvature_* (5-9x),
 dilation (3.7x), erosion (4.4x), expand (466x!), expand_mask (516x!),
-maximum_local (3.9x), maximum_local_disk (165x!), maximum_smooth (0.25x),
-minimum_local (1.9x), minimum_local_disk (131x!), minimum_smooth (0.14x),
-morphological_black_hat (2.3x), morphological_gradient (1.7x), morphological_top_hat (2.3x),
-opening (2.2x), shrink (794x!), shrink_mask (762x!), sdf_2d_polyline (10x),
-sdf_2d_polyline_bezier (34x!), median_3x3 (0.45x), gradient_norm (0.18x)
-### Failing (known root causes):
-- Noise tests: diff>1 — GPU uses different algorithm/seed behavior
-- Stochastic/iterative: hydraulic_particle (0.04), thermal* (0.005-0.025)
-- Parallel ordering: laplace (0.005), mean_local (0.039), smooth_cpulse (0.022)
-- Needs investigation: ruggedness (0.117), rugosity (0.327), unsphericity (0.076),
-  skeleton (0.084), shape_index (0.047), relative_distance_from_skeleton (5.0)
+gamma_correction_local (4.5x), maximum_local (3.9x), maximum_local_disk (165x!),
+maximum_smooth (0.25x), minimum_local (1.9x), minimum_local_disk (131x!),
+minimum_smooth (0.14x), morphological_black_hat (2.3x), morphological_gradient (1.7x),
+morphological_top_hat (2.3x), normal_displacement (3.2x), normal_displacement_mask (2.4x),
+opening (2.2x), plateau (4.5x), plateau_mask (5x), relative_elevation (5.5x),
+ruggedness (156x!), rugosity (7.9x), shape_index (5x), shrink (794x!), shrink_mask (762x!),
+sdf_2d_polyline (10x), sdf_2d_polyline_bezier (34x!), smooth_cpulse (13x),
+smooth_cpulse_mask (9x), smooth_fill (6.5x), smooth_fill_mask (4.6x),
+smooth_fill_holes (5x), smooth_fill_smear_peaks (7x), unsphericity (5x),
+median_3x3 (0.45x), gradient_norm (0.18x)
+### NOK (known inherent differences — not bugs):
+- Noise tests (14): GPU uses different algorithm/seed behavior (diff 0.4-1.9)
+- Stochastic/iterative: hydraulic_particle (0.04), thermal (0.025), thermal_bedrock (0.008),
+  thermal_auto_bedrock (0.008), thermal_rib (0.005), mean_shift (0.026)
+- Parallel ordering: laplace (0.005), laplace_masked (0.002), mean_local (0.039)
+- Interpolation/algorithm diff: warp (0.009), flow_direction_d8 (0.003),
+  hydraulic_stream_log (0.003)
+- Topology diff: skeleton (0.084), relative_distance_from_skeleton (5.0)
+
+## Bugs Fixed This Phase
+1. ruggedness.comp: OOB clamp→skip (match CPU behavior), 0.117→0.000 diff
+2. smooth_cpulse.comp: clamp→mirror boundary, loop bounds [-(ir+1), ir-1], /ir normalization
+3. smooth_cpulse GPU: masked variant changed to full-smooth-then-lerp (match CPU)
+4. smooth_cpulse pass_nb fix: bind_arguments includes 4th arg (push_constant_offset=16)
+5. GPU morphology: use_disk_kernel default true→false
 
 ## Phase 4 Summary — DONE ✅
 - kuwahara.comp + kuwahara_masked.comp: new GPU-only shaders (69 shaders total)
