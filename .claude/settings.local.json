@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/vcpkg/installed/x64-windows/bin/**)",
+      "Read(//c/vcpkg/installed/x64-windows/Qt6/**)",
+      "Read(//c/Qt/**)",
+      "Bash(cmake --build . --target hesiod --config Release)"
+    ]
+  }
+}

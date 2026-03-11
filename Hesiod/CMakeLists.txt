@@ -86,6 +86,26 @@ target_link_libraries(
           qtexture_downloader)
 
 # ------------------------------
+# Deploy Qt DLLs (Windows)
+# ------------------------------
+if(WIN32)
+  find_program(WINDEPLOYQT_EXECUTABLE windeployqt
+    HINTS "${Qt6_DIR}/../../../bin"
+          "${Qt6Core_DIR}/../../../bin")
+  if(WINDEPLOYQT_EXECUTABLE)
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+      COMMAND "${WINDEPLOYQT_EXECUTABLE}"
+              --no-translations
+              --no-compiler-runtime
+              "$<TARGET_FILE:${PROJECT_NAME}>"
+      COMMENT "Running windeployqt to deploy Qt DLLs..."
+    )
+  else()
+    message(WARNING "windeployqt not found — Qt DLLs will not be deployed automatically")
+  endif()
+endif()
+
+# ------------------------------
 # Copy data folder
 # ------------------------------
 file(COPY ${CMAKE_SOURCE_DIR}/Hesiod/data
