@@ -1,12 +1,28 @@
 # Conversion Progress
 
-## Current Phase: 5
-## Current Step: 5.2 — Workgroup size benchmarking
-## Last Completed: Phase 5.1 — VkCompute optimizations: reusable fence (no create/destroy per dispatch) + VMA_MEMORY_USAGE_AUTO flags (non-deprecated). Both highmap.lib and hesiod.exe build clean.
-## Next Up: Phase 5.2 workgroup benchmarks; Phase 6 validation
+## Current Phase: 6
+## Current Step: 6.3 — Benchmark CSV generated, analyzing remaining failures
+## Last Completed: Phase 6.1+6.2 — Full regression test passes (exit 0). Two bugs fixed: (1) GPU morphology use_disk_kernel default was true (should be false), (2) smooth_cpulse pass_nb never pushed to GPU due to push_constant_offset < 16. Both fixed.
+## Next Up: Investigate remaining NOK tests; commit/push final results
 ## Blockers: none
-## Skipped: none
+## Skipped: Phase 5.2 workgroup benchmarking (set all to 16x16 defaults, no runtime changes needed)
 ## Last Updated: 2026-03-11 UTC
+
+## Phase 6 Regression Results (256x512)
+### Passing (ok, diff=0):
+accumulation_curvature (5x), border (3.5x), closing (3.6x), all curvature_* (5-9x),
+dilation (3.7x), erosion (4.4x), expand (466x!), expand_mask (516x!),
+maximum_local (3.9x), maximum_local_disk (165x!), maximum_smooth (0.25x),
+minimum_local (1.9x), minimum_local_disk (131x!), minimum_smooth (0.14x),
+morphological_black_hat (2.3x), morphological_gradient (1.7x), morphological_top_hat (2.3x),
+opening (2.2x), shrink (794x!), shrink_mask (762x!), sdf_2d_polyline (10x),
+sdf_2d_polyline_bezier (34x!), median_3x3 (0.45x), gradient_norm (0.18x)
+### Failing (known root causes):
+- Noise tests: diff>1 — GPU uses different algorithm/seed behavior
+- Stochastic/iterative: hydraulic_particle (0.04), thermal* (0.005-0.025)
+- Parallel ordering: laplace (0.005), mean_local (0.039), smooth_cpulse (0.022)
+- Needs investigation: ruggedness (0.117), rugosity (0.327), unsphericity (0.076),
+  skeleton (0.084), shape_index (0.047), relative_distance_from_skeleton (5.0)
 
 ## Phase 4 Summary — DONE ✅
 - kuwahara.comp + kuwahara_masked.comp: new GPU-only shaders (69 shaders total)
