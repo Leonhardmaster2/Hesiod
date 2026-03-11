@@ -1,12 +1,19 @@
 # Conversion Progress
 
-## Current Phase: 3
-## Current Step: 3.1 — COMPLETE. All *_gpu.cpp converted; highmap.lib builds OK. Full Hesiod build in progress.
-## Last Completed: Phase 3 Step 3.1 — all 34 *_gpu.cpp files converted from clwrapper::Run → vkcompute::Run. highmap.lib BUILDS SUCCESSFULLY.
-## Next Up: Phase 3 Step 3.2 — verify full Hesiod build; then Phase 4 (new GPU paths)
+## Current Phase: 5
+## Current Step: 5.2 — Workgroup size benchmarking
+## Last Completed: Phase 5.1 — VkCompute optimizations: reusable fence (no create/destroy per dispatch) + VMA_MEMORY_USAGE_AUTO flags (non-deprecated). Both highmap.lib and hesiod.exe build clean.
+## Next Up: Phase 5.2 workgroup benchmarks; Phase 6 validation
 ## Blockers: none
 ## Skipped: none
 ## Last Updated: 2026-03-11 UTC
+
+## Phase 4 Summary — DONE ✅
+- kuwahara.comp + kuwahara_masked.comp: new GPU-only shaders (69 shaders total)
+- All 70 Hesiod node files: opencl/gpu_opencl.hpp → vulkan/gpu_vulkan.hpp
+- hesiod_application.cpp: init_opencl() → init_vulkan()
+- app_settings.cpp: clwrapper device selection replaced with Vulkan auto-select comment
+- hesiod.exe builds cleanly: C:\Dev\HesiodVulkan\Hesiod\build\bin\Release\hesiod.exe
 
 ## Phase 3 Build Fixes Applied
 - HighMap/CMakeLists.txt: made OPENCL_SOURCES conditional on HIGHMAP_ENABLE_OPENCL AND NOT HIGHMAP_ENABLE_VULKAN
