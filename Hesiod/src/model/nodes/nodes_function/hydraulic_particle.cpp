@@ -5,7 +5,7 @@
 #include "highmap/filters.hpp"
 #include "highmap/math.hpp"
 #include "highmap/multiscale/downscaling.hpp"
-#include "highmap/opencl/gpu_opencl.hpp"
+#include "highmap/vulkan/gpu_vulkan.hpp"
 #include "highmap/range.hpp"
 
 #include "attributes.hpp"

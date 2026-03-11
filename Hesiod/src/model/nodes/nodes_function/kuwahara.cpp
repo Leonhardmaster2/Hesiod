@@ -2,6 +2,7 @@
  * Public License. The full license is in the file LICENSE, distributed with
  * this software. */
 #include "highmap/filters.hpp"
+#include "highmap/vulkan/gpu_vulkan.hpp"
 
 #include "attributes.hpp"
 
@@ -26,6 +27,10 @@ void setup_kuwahara_node(BaseNode &node)
   // attribute(s)
   node.add_attr<FloatAttribute>("radius", "radius", 0.05f, 0.f, 0.2f);
   node.add_attr<FloatAttribute>("mix_ratio", "mix_ratio", 1.f, 0.f, 1.f);
+  node.add_attr<BoolAttribute>("GPU", "GPU", HSD_DEFAULT_GPU_MODE);
+
+  // attribute(s) order
+  node.set_attr_ordered_key({"radius", "mix_ratio", "_SEPARATOR_", "GPU"});
 }
 
 void compute_kuwahara_node(BaseNode &node)
@@ -42,13 +47,23 @@ void compute_kuwahara_node(BaseNode &node)
     // copy the input heightmap
     *p_out = *p_in;
 
-    int ir = std::max(1, (int)(node.get_attr<FloatAttribute>("radius") * p_out->shape.x));
+    int   ir        = std::max(1, (int)(node.get_attr<FloatAttribute>("radius") * p_out->shape.x));
+    float mix_ratio = node.get_attr<FloatAttribute>("mix_ratio");
 
-    hmap::transform(
-        *p_out,
-        p_mask,
-        [&node, &ir](hmap::Array &x, hmap::Array *p_mask)
-        { hmap::kuwahara(x, ir, p_mask, node.get_attr<FloatAttribute>("mix_ratio")); });
+    if (node.get_attr<BoolAttribute>("GPU"))
+    {
+      hmap::transform(*p_out,
+                      p_mask,
+                      [&ir, &mix_ratio](hmap::Array &x, hmap::Array *p_mask)
+                      { hmap::gpu::kuwahara(x, ir, p_mask, mix_ratio); });
+    }
+    else
+    {
+      hmap::transform(*p_out,
+                      p_mask,
+                      [&ir, &mix_ratio](hmap::Array &x, hmap::Array *p_mask)
+                      { hmap::kuwahara(x, ir, p_mask, mix_ratio); });
+    }
 
     p_out->smooth_overlap_buffers();
   }

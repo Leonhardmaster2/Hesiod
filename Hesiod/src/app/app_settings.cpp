@@ -4,7 +4,7 @@
 #include <QDir>
 #include <QFileInfo>
 
-#include "highmap/opencl/gpu_opencl.hpp"
+#include "highmap/vulkan/gpu_vulkan.hpp"
 
 #include "hesiod/app/app_settings.hpp"
 #include "hesiod/logger.hpp"
@@ -93,28 +93,11 @@ void AppSettings::json_from(nlohmann::json const &json)
                 "interface.enable_example_selector_at_startup",
                 interface.enable_example_selector_at_startup);
 
-  // OpenCL device
+  // GPU device (Vulkan auto-selects best device; stored name is informational only)
   {
     json_safe_get(json, "node_editor.gpu_device_name", node_editor.gpu_device_name);
-
-    // if it's empty, let the one choosed by default by the OpenCL
-    // wrapper
-    if (!node_editor.gpu_device_name.empty())
-    {
-      auto cl_device_map = clwrapper::DeviceManager::get_instance()
-                               .get_available_devices();
-
-      for (auto &[device_id, device_name] : cl_device_map)
-      {
-        if (device_name == node_editor.gpu_device_name)
-        {
-          if (clwrapper::DeviceManager::get_instance().set_device(device_id))
-            clwrapper::KernelManager::get_instance().build_program();
-          else
-            Logger::log()->error("OpenCL device selection failed");
-        }
-      }
-    }
+    // VkCompute selects the best available Vulkan device automatically at init.
+    // Device override is not yet supported in the Vulkan backend.
   }
 
   json_safe_get(json, "node_editor.default_resolution", node_editor.default_resolution);

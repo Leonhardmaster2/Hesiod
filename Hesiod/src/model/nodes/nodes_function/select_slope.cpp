@@ -3,7 +3,7 @@
  * this software. */
 #include "highmap/gradient.hpp"
 #include "highmap/morphology.hpp"
-#include "highmap/opencl/gpu_opencl.hpp"
+#include "highmap/vulkan/gpu_vulkan.hpp"
 
 #include "attributes.hpp"
 

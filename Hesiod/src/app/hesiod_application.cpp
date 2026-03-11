@@ -14,7 +14,7 @@
 #include <QStatusBar>
 #include <QUrl>
 
-#include "highmap/opencl/gpu_opencl.hpp"
+#include "highmap/vulkan/gpu_vulkan.hpp"
 
 #include "hesiod/app/hesiod_application.hpp"
 #include "hesiod/cli/batch_mode.hpp"
@@ -54,10 +54,10 @@ HesiodApplication::HesiodApplication(int &argc, char **argv) : QApplication(argc
   // launch splash
   SplashScreen *splash = new SplashScreen();
 
-  // start OpenCL
-  splash->show_message("Initializing OpenCL kernels...");
+  // start Vulkan compute backend
+  splash->show_message("Initializing Vulkan compute backend...");
 
-  hmap::gpu::init_opencl();
+  hmap::gpu::init_vulkan();
 
   // for colormaps loading
   splash->show_message("Initializing color gradients...");
