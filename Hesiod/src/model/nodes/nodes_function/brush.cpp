@@ -24,13 +24,20 @@ void setup_brush_node(BaseNode &node)
   // attribute(s)
   auto &c = node.meta_group().current();
 
-  auto *a = c.add<meta::Array>(
-      "hmap",
-      meta::Array{glm::ivec2(512, 512), std::vector<float>(512 * 512, 0.f)});
+  // the paint canvas resamples canvas->model on every stroke and model->canvas
+  // on every sync; those transforms are only lossless while the canvas field
+  // and the model share a shape, so keep them tied together (a smaller canvas
+  // low-pass filters the painting and erodes its peaks stroke by stroke)
+  constexpr int hmap_shape = 512;
+
+  auto *a = c.add<meta::Array>("hmap",
+                               meta::Array{glm::ivec2(hmap_shape, hmap_shape),
+                                           std::vector<float>(hmap_shape * hmap_shape,
+                                                              0.f)});
   a->metadata().try_add(meta::keys::ui::label, std::string("Heightmap"));
   a->metadata().try_add(meta::keys::ui::category, std::string("Main"));
-  a->metadata().try_add(meta::keys::ui::width, 256);
-  a->metadata().try_add(meta::keys::ui::height, 256);
+  a->metadata().try_add(meta::keys::ui::width, hmap_shape);
+  a->metadata().try_add(meta::keys::ui::height, hmap_shape);
   a->metadata().try_add(std::string(hsd::compat::keys::type_label),
                         std::string("Array"));
 
