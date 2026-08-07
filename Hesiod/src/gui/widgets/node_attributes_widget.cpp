@@ -385,6 +385,13 @@ void NodeAttributesWidget::setup_layout()
                                               preset_store,
                                               this);
 
+  // "Enable live update during editing", from the app settings. A node update
+  // runs synchronously on the GUI thread, so forwarding every incremental
+  // change makes a drag stutter: the panel's debounce only waits for the drag
+  // to PAUSE, and a real drag pauses constantly. With this off the recompute
+  // happens once, on release.
+  this->props_panel->set_live_update(HSD_CTX.app_settings.node_editor.live_update);
+
   // The section restyling hack that used to live here is gone: PpSection paints
   // its own header, so there is nothing left to patch up after the fact.
 
