@@ -194,12 +194,12 @@ void GraphEditorWidget::setup_layout()
     graph_layout->addWidget(graph_toolbar);
   }
 
-  // settings panel (created after graph_node_widget, which it takes).
+  // settings panel (created after graph_node_widget, which it takes). The
+  // panel restyles itself (properties_panel_style.cpp), including the left
+  // hairline separating it from the graph area — do not override its
+  // stylesheet here.
   this->node_settings_widget = new NodeSettingsWidget(this->graph_node_widget);
   {
-    std::string color = HSD_CTX.app_settings.colors.border.name().toStdString();
-    set_style(this->node_settings_widget,
-              std::format("border-left: 1px solid {};", color));
     this->node_settings_widget->setVisible(
         HSD_CTX.app_settings.node_editor.show_node_settings_pan);
   }

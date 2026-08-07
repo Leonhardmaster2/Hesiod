@@ -9,12 +9,12 @@
 #include <QStyle>
 #include <QToolButton>
 
-#include "meta_qt/container_group_widget.hpp"
-
 #include "hesiod/app/hesiod_application.hpp"
 #include "hesiod/gui/widgets/documentation_popup.hpp"
 #include "hesiod/gui/widgets/node_attributes_widget.hpp"
+#include "hesiod/gui/widgets/output_section.hpp"
 #include "hesiod/logger.hpp"
+#include "hesiod/model/constants/color_gradient.hpp"
 #include "hesiod/model/nodes/base_node.hpp"
 
 namespace hesiod
@@ -41,14 +41,19 @@ QWidget *NodeAttributesWidget::create_toolbar()
 
   QWidget     *toolbar = new QWidget(this);
   QHBoxLayout *layout = new QHBoxLayout(toolbar);
-  layout->setContentsMargins(0, 0, 0, 0);
+  layout->setContentsMargins(0, 0, 0, 6);
+  layout->setSpacing(8);
 
   auto make_button = [&](const QIcon &icon, const QString &tooltip)
   {
     QToolButton *btn = new QToolButton;
+    // #ppToolButton is styled by properties_panel_style.cpp; without the
+    // objectName the toolbar renders stock next to the restyled panel.
+    btn->setObjectName("ppToolButton");
     btn->setToolTip(tooltip);
     btn->setIcon(icon);
-    // btn->setStyleSheet("border: 0px;");
+    btn->setIconSize(QSize(16, 16));
+    btn->setFixedSize(34, 34);
     return btn;
   };
 
@@ -273,11 +278,15 @@ QWidget *NodeAttributesWidget::create_toolbar()
 
 void NodeAttributesWidget::sync_from_model()
 {
-  if (this->meta_widget)
-    this->meta_widget->on_sync_widget_from_model();
+  if (this->props_panel)
+    this->props_panel->sync_from_model();
+
+  // the node just recomputed, so the preview is stale
+  if (this->output_section)
+    this->output_section->refresh();
 }
 
-bool NodeAttributesWidget::is_meta_backed() const { return this->meta_widget != nullptr; }
+bool NodeAttributesWidget::is_meta_backed() const { return this->props_panel != nullptr; }
 
 void NodeAttributesWidget::setup_layout()
 {
@@ -293,30 +302,98 @@ void NodeAttributesWidget::setup_layout()
 
   // --- main layout (built once)
   QVBoxLayout *main_layout = new QVBoxLayout(this);
-  main_layout->setSpacing(4);
+  main_layout->setSpacing(8);
   main_layout->setContentsMargins(0, 0, 0, 0);
 
   if (this->add_toolbar)
     main_layout->addWidget(this->create_toolbar());
 
-  // --- Meta ContainerGroupWidget
+  // --- Hesiod industrial properties panel
+  //
+  // Replaces meta::qt::ContainerGroupWidget. The Meta widgets are palette- and
+  // stylesheet-driven, which cannot express the design language: the rail fill,
+  // the machined thumb, per-group accents and the modified/default/locked text
+  // rule are all painted, not styled. PropertiesPanel walks the same attribute
+  // container and builds custom-painted rows instead, falling back to
+  // meta::qt::render() for attribute types not ported yet.
+  //
+  // iinitial_meta_state() supplies each row's default, so the white/grey
+  // "modified" text actually means changed-from-default rather than
+  // changed-since-the-panel-opened.
+  // Gradient presets live in data/color_gradients/<category>/. The panel is
+  // kept ignorant of that: it gets a save and a reload callback, so the
+  // properties widgets stay free of hesiod/model includes.
+  pp::GradientPresetStore preset_store;
 
-  auto options = meta::qt::ContainerRenderOptions{
-      .category_policy = meta::qt::CategoryPolicy::CP_MERGED,
-      .root_category_name = std::string{}};
+  preset_store.save = [](const QString                     &category,
+                         const QString                     &name,
+                         const QVector<pp::GradientStop>   &stops)
+  {
+    std::vector<float>                positions;
+    std::vector<std::array<float, 4>> colors;
+    positions.reserve(static_cast<size_t>(stops.size()));
+    colors.reserve(static_cast<size_t>(stops.size()));
 
-  this->meta_widget = meta::qt::render(p_node->get_meta_group(),
-                                       options,
-                                       this,
-                                       /* render_single_group_as_a_container */ true);
+    for (const auto &s : stops)
+    {
+      positions.push_back(static_cast<float>(s.pos));
+      colors.push_back({static_cast<float>(s.color.redF()),
+                        static_cast<float>(s.color.greenF()),
+                        static_cast<float>(s.color.blueF()),
+                        static_cast<float>(s.color.alphaF())});
+    }
 
-  // Recompute on value_changed or edit_ended depending on app settings.
-  auto signal = HSD_CTX.app_settings.node_editor.live_update
-                    ? &meta::qt::MetaWidget::value_changed
-                    : &meta::qt::MetaWidget::edit_ended;
+    auto &mgr = ColorGradientManager::get_instance();
+    if (!mgr.save_preset(category.toStdString(), name.toStdString(), positions, colors))
+      return false;
 
-  this->connect(this->meta_widget,
-                signal,
+    mgr.update_data();
+    return true;
+  };
+
+  preset_store.reload = []()
+  {
+    QVector<pp::GradientPreset> out;
+
+    for (const auto &p : ColorGradientManager::get_instance().get_as_attr_presets())
+    {
+      QString   qname = QString::fromStdString(p.name);
+      QString   category;
+      const int slash = qname.lastIndexOf('/');
+
+      if (slash >= 0)
+      {
+        category = qname.left(slash);
+        qname = qname.mid(slash + 1);
+      }
+
+      QVector<pp::GradientStop> stops;
+      stops.reserve(static_cast<int>(p.stops.size()));
+      for (const auto &s : p.stops)
+        stops.push_back({static_cast<double>(s.position),
+                         QColor::fromRgbF(s.color[0], s.color[1], s.color[2],
+                                          s.color[3])});
+
+      out.push_back({category, qname, stops});
+    }
+
+    return out;
+  };
+
+  this->props_panel = new pp::PropertiesPanel(&p_node->get_meta_group().current(),
+                                              p_node->iinitial_meta_state(),
+                                              preset_store,
+                                              this);
+
+  // The section restyling hack that used to live here is gone: PpSection paints
+  // its own header, so there is nothing left to patch up after the fact.
+
+  // Recompute continuously on value_changed: the panel syncs from the model
+  // (sync_from_model()) instead of being rebuilt on update_finished, so
+  // recomputing on every value_changed no longer destroys a live-dragged widget
+  // mid-drag.
+  this->connect(this->props_panel,
+                &pp::PropertiesPanel::value_changed,
                 this,
                 [this]()
                 {
@@ -326,7 +403,27 @@ void NodeAttributesWidget::setup_layout()
                   gno->update(this->node_id);
                 });
 
-  main_layout->addWidget(this->meta_widget);
+  // --- OUTPUT section
+  //
+  // Appended into the panel's own stack so it reads as one more category,
+  // continuing the index and accent cycle. It previews each of the node's
+  // output ports and can write any of them to disk directly, which saves
+  // wiring an Export* node just to look at or dump a result.
+  if (OutputSection::node_has_outputs(p_node))
+  {
+    const int     index = this->props_panel->section_count() + 1;
+    const QString idx = QString("%1").arg(index, 2, 10, QChar('0'));
+
+    this->output_section = new OutputSection(this->p_graph_node,
+                                             this->node_id,
+                                             idx,
+                                             *pp::group_accent(index - 1),
+                                             this->props_panel);
+
+    this->props_panel->add_section(this->output_section);
+  }
+
+  main_layout->addWidget(this->props_panel);
 }
 
 } // namespace hesiod

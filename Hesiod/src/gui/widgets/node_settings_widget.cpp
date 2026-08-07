@@ -1,7 +1,11 @@
 /* Copyright (c) 2025 Otto Link. Distributed under the terms of the GNU General
  * Public License. The full license is in the file LICENSE, distributed with
  * this software. */
+#include <QFrame>
+#include <QHBoxLayout>
 #include <QLabel>
+#include <QScrollArea>
+#include <QSpacerItem>
 #include <QVBoxLayout>
 
 #include "hesiod/app/hesiod_application.hpp"
@@ -10,6 +14,7 @@
 #include "hesiod/gui/widgets/node_attributes_widget.hpp"
 #include "hesiod/gui/widgets/node_library_widget.hpp"
 #include "hesiod/gui/widgets/node_settings_widget.hpp"
+#include "hesiod/gui/widgets/properties_panel_style.hpp"
 #include "hesiod/logger.hpp"
 #include "hesiod/model/utils.hpp"
 
@@ -58,21 +63,55 @@ void NodeSettingsWidget::setup_layout()
 
   auto *layout = new QVBoxLayout();
   layout->setContentsMargins(0, 0, 0, 0);
-  layout->setSpacing(4);
+  layout->setSpacing(0);
   this->setLayout(layout);
 
-  const int margin = 6;
+  // --- panel header strip
+
+  {
+    auto *header = new QWidget();
+    header->setObjectName("ppHeader");
+    header->setFixedHeight(48);
+
+    auto *header_layout = new QHBoxLayout(header);
+    header_layout->setContentsMargins(20, 0, 20, 0);
+    header_layout->setSpacing(10);
+
+    auto *logo = new QFrame();
+    logo->setObjectName("ppHeaderLogo");
+    logo->setFixedSize(10, 10);
+
+    auto *title = new QLabel("PROPERTIES");
+    title->setObjectName("ppHeaderTitle");
+
+    auto *subtitle = new QLabel("// node settings");
+    subtitle->setObjectName("ppHeaderSub");
+
+    header_layout->addWidget(logo);
+    header_layout->addWidget(title);
+    header_layout->addWidget(subtitle);
+    header_layout->addStretch();
+
+    layout->addWidget(header);
+  }
 
   // --- attributes widget
 
   {
     auto *container = new QWidget();
     this->attr_layout = new QVBoxLayout(container);
-    this->attr_layout->setContentsMargins(margin, 0, margin, 0);
-    this->attr_layout->setSpacing(2);
+    this->attr_layout->setContentsMargins(20, 12, 20, 16);
+    this->attr_layout->setSpacing(14);
 
     auto *scroll = new QScrollArea();
-    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    // Always reserve the vertical scrollbar's 6px. With AsNeeded, expanding or
+    // collapsing a section flips the bar in and out, which changes the
+    // viewport width and reflows every row - so the padding jumps sideways for
+    // reasons that look unrelated to what was clicked. The bar is a 6px strip
+    // painted in the page colour, so a permanent one is near invisible.
+    scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
+    // Rows are width-responsive, so there is nothing to scroll to sideways.
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     scroll->setWidget(container);
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
@@ -80,6 +119,10 @@ void NodeSettingsWidget::setup_layout()
 
     layout->addWidget(scroll);
   }
+
+  // palette + scoped stylesheet; must run before update_content() builds the
+  // attribute widgets (the Meta widgets sample the palette at construction)
+  apply_properties_panel_style(this);
 }
 
 void NodeSettingsWidget::update_content()
@@ -97,7 +140,8 @@ void NodeSettingsWidget::update_content()
   if (!p_gno)
     return;
 
-  this->attr_layout->addWidget(new QLabel()); // space
+  this->attr_layout->addSpacerItem(
+      new QSpacerItem(1, 4, QSizePolicy::Fixed, QSizePolicy::Fixed));
 
   // refill based on selected nodes (and pinned nodes)
   std::vector<std::string> selected_ids = this->p_graph_node_widget
@@ -129,6 +173,8 @@ void NodeSettingsWidget::update_content()
     // pinned checkbox button
     {
       auto *button_pin = new IconCheckBox(this);
+      button_pin->setObjectName("ppPinHeader");
+      button_pin->setMinimumHeight(26);
       button_pin->set_label(node_caption);
       button_pin->set_icons(HSD_ICON("push_pin"), HSD_ICON("push_pin_accent"));
       button_pin->setCheckable(true);
@@ -163,7 +209,6 @@ void NodeSettingsWidget::update_content()
       continue;
 
     this->attr_layout->addWidget(attr_widget);
-    this->attr_layout->addWidget(new QLabel()); // space
 
     this->attr_widgets.push_back(attr_widget);
   }

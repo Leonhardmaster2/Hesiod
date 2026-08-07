@@ -3,9 +3,8 @@
 #pragma once
 #include <memory>
 
-#include "meta_qt/container_group_widget.hpp"
-
 #include "hesiod/gui/widgets/graph_node_widget.hpp"
+#include "hesiod/gui/widgets/properties/properties_panel.hpp"
 #include "hesiod/model/graph/graph_node.hpp"
 
 namespace hesiod
@@ -13,6 +12,7 @@ namespace hesiod
 
 class BaseNode; // forward decl.
 class GraphNodeWidget;
+class OutputSection;
 
 // =====================================
 // NodeAttributesWidget
@@ -40,7 +40,11 @@ private:
   QPointer<GraphNodeWidget> p_graph_node_widget;
   bool                      add_toolbar;
 
-  meta::qt::MetaWidget *meta_widget = nullptr;
+  // Hesiod-side industrial panel; replaces meta::qt::ContainerGroupWidget.
+  pp::PropertiesPanel *props_panel = nullptr;
+
+  // Owned by props_panel; null when the node has no output ports.
+  QPointer<OutputSection> output_section;
 };
 
 } // namespace hesiod
