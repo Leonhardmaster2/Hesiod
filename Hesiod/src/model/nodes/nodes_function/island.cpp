@@ -34,7 +34,12 @@ void setup_island_node(BaseNode &node)
   node.add_attr<SeedAttribute>("seed", "Seed");
   node.add_attr<FloatAttribute>("noise_amp", "Amplitude", 0.07f, 0.f, 2.f);
   node.add_attr<WaveNbAttribute>("noise_kw", "Spatial Frequency", kw, 0.f, FLT_MAX, true);
-  node.add_attr<IntAttribute>("noise_octaves", "Octaves", 8, INT_MAX);
+  // The 4th argument is the MINIMUM, not the maximum. Passing INT_MAX pinned
+  // the lower bound at 2147483647, so the value clamped to it and the row
+  // showed "2147483647" - and, because the panel needs max > min to build a
+  // rail, it fell back to a stock widget too. Same bounds as every other
+  // octaves attribute.
+  node.add_attr<IntAttribute>("noise_octaves", "Octaves", 8, 0, 32);
   node.add_attr<FloatAttribute>("noise_rugosity", "Rugosity", 0.7f, 0.f, 1.f);
   node.add_attr<FloatAttribute>("noise_angle", "Direction Angle", 45.f, -180.f, 180.f);
   node.add_attr<FloatAttribute>("noise_k_smoothing",
