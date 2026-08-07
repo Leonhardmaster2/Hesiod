@@ -1,4 +1,4 @@
-/* Copyright (c) 2025 Otto Link. Distributed under the terms of the GNU General
+﻿/* Copyright (c) 2025 Otto Link. Distributed under the terms of the GNU General
  * Public License. The full license is in the file LICENSE, distributed with
  * this software. */
 
@@ -10,11 +10,10 @@
  * selected node's output ports and writes any of them to disk without needing
  * an Export* node wired into the graph.
  *
- * This deliberately lives OUTSIDE gui/widgets/properties/. Those widgets are
- * kept portable (Qt + tokens + the Meta attribute API only) so they can move
- * into MetaUI as a file move; this one knows about BaseNode, HighMap data
- * types and export formats, so it stays Hesiod-side. The dependency direction
- * is Hesiod -> properties/, never the reverse.
+ * The industrial widget set now lives in MetaUI, which this builds on. This
+ * section stays Hesiod-side because it knows about BaseNode, HighMap data
+ * types and export formats - none of which belong in a general attribute
+ * library. The dependency direction is Hesiod -> MetaUI, never the reverse.
  */
 #pragma once
 #include <filesystem>
@@ -26,22 +25,22 @@
 #include <QWidget>
 
 #include "hesiod/gui/widgets/data_preview.hpp" // PreviewType
-#include "hesiod/gui/widgets/properties/pp_section.hpp"
+#include "meta_qt/widgets/industrial/pp_section.hpp"
 #include "hesiod/model/graph/graph_node.hpp"
 
 class QLabel;
 class QTimer;
 
+namespace meta::qt
+{
+class HCombo;
+class ModButton;
+} // namespace meta::qt
+
 namespace hesiod
 {
 
 class BaseNode;
-
-namespace pp
-{
-class HCombo;
-class ModButton;
-} // namespace pp
 
 // =====================================
 // Export description
@@ -117,7 +116,7 @@ private:
 // OutputSection
 // =====================================
 
-class OutputSection : public pp::PpSection
+class OutputSection : public meta::qt::PpSection
 {
   Q_OBJECT
 
@@ -152,10 +151,10 @@ private:
   PreviewType          preview_type_ = PreviewType::GRAYSCALE;
   std::vector<ExportOption> formats_;
 
-  pp::HCombo    *port_combo_ = nullptr; ///< only built when >1 output
-  pp::HCombo    *view_combo_ = nullptr;
-  pp::HCombo    *format_combo_ = nullptr;
-  pp::ModButton *export_btn_ = nullptr;
+  meta::qt::HCombo    *port_combo_ = nullptr; ///< only built when >1 output
+  meta::qt::HCombo    *view_combo_ = nullptr;
+  meta::qt::HCombo    *format_combo_ = nullptr;
+  meta::qt::ModButton *export_btn_ = nullptr;
   OutputPreview *preview_ = nullptr;
   QLabel        *caption_ = nullptr;
   QLabel        *status_ = nullptr;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2025 Otto Link. Distributed under the terms of the GNU General
+﻿/* Copyright (c) 2025 Otto Link. Distributed under the terms of the GNU General
  * Public License. The full license is in the file LICENSE, distributed with
  * this software. */
 #include <fstream>
@@ -323,11 +323,11 @@ void NodeAttributesWidget::setup_layout()
   // Gradient presets live in data/color_gradients/<category>/. The panel is
   // kept ignorant of that: it gets a save and a reload callback, so the
   // properties widgets stay free of hesiod/model includes.
-  pp::GradientPresetStore preset_store;
+  meta::qt::GradientPresetStore preset_store;
 
   preset_store.save = [](const QString                     &category,
                          const QString                     &name,
-                         const QVector<pp::GradientStop>   &stops)
+                         const QVector<meta::qt::GradientStop>   &stops)
   {
     std::vector<float>                positions;
     std::vector<std::array<float, 4>> colors;
@@ -353,7 +353,7 @@ void NodeAttributesWidget::setup_layout()
 
   preset_store.reload = []()
   {
-    QVector<pp::GradientPreset> out;
+    QVector<meta::qt::GradientPreset> out;
 
     for (const auto &p : ColorGradientManager::get_instance().get_as_attr_presets())
     {
@@ -367,7 +367,7 @@ void NodeAttributesWidget::setup_layout()
         qname = qname.mid(slash + 1);
       }
 
-      QVector<pp::GradientStop> stops;
+      QVector<meta::qt::GradientStop> stops;
       stops.reserve(static_cast<int>(p.stops.size()));
       for (const auto &s : p.stops)
         stops.push_back({static_cast<double>(s.position),
@@ -380,7 +380,7 @@ void NodeAttributesWidget::setup_layout()
     return out;
   };
 
-  this->props_panel = new pp::PropertiesPanel(&p_node->get_meta_group().current(),
+  this->props_panel = new meta::qt::PropertiesPanel(&p_node->get_meta_group().current(),
                                               p_node->iinitial_meta_state(),
                                               preset_store,
                                               this);
@@ -393,7 +393,7 @@ void NodeAttributesWidget::setup_layout()
   // recomputing on every value_changed no longer destroys a live-dragged widget
   // mid-drag.
   this->connect(this->props_panel,
-                &pp::PropertiesPanel::value_changed,
+                &meta::qt::PropertiesPanel::value_changed,
                 this,
                 [this]()
                 {
@@ -417,7 +417,7 @@ void NodeAttributesWidget::setup_layout()
     this->output_section = new OutputSection(this->p_graph_node,
                                              this->node_id,
                                              idx,
-                                             *pp::group_accent(index - 1),
+                                             meta::qt::group_accent(index - 1),
                                              this->props_panel);
 
     this->props_panel->add_section(this->output_section);

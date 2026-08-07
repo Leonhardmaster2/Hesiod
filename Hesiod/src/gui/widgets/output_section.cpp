@@ -1,4 +1,4 @@
-/* Copyright (c) 2025 Otto Link. Distributed under the terms of the GNU General
+﻿/* Copyright (c) 2025 Otto Link. Distributed under the terms of the GNU General
  * Public License. The full license is in the file LICENSE, distributed with
  * this software. */
 #include <cstring>
@@ -20,9 +20,9 @@
 
 #include "hesiod/app/hesiod_application.hpp"
 #include "hesiod/gui/widgets/output_section.hpp"
-#include "hesiod/gui/widgets/properties/h_combo.hpp"
-#include "hesiod/gui/widgets/properties/mod_button.hpp"
-#include "hesiod/gui/widgets/properties/properties_tokens.hpp"
+#include "meta_qt/widgets/industrial/h_combo.hpp"
+#include "meta_qt/widgets/industrial/mod_button.hpp"
+#include "meta_qt/widgets/industrial/tokens.hpp"
 #include "hesiod/logger.hpp"
 #include "hesiod/model/nodes/base_node.hpp"
 #include "hesiod/model/utils.hpp"
@@ -30,7 +30,7 @@
 namespace hesiod
 {
 
-using namespace pp;
+using namespace meta::qt;
 
 namespace
 {
