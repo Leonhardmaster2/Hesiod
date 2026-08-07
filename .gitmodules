@@ -1,4 +1,4 @@
-﻿[submodule "external/HighMap"]
+[submodule "external/HighMap"]
 	path = external/HighMap
 	url = git@github.com:otto-link/HighMap.git
 [submodule "external/args"]
