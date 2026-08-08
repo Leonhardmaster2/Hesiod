@@ -40,6 +40,14 @@ public:
 
   const QPixmap &get_preview_pixmap() const;
 
+  // the node context menu drives the same two choices as this widget's own
+  // right-click menu, so they are reachable without hitting the thumbnail
+  int  get_preview_port_index() const { return this->preview_port_index; }
+  void set_preview_port_index(int port_index);
+
+  PreviewType get_preview_type() const { return this->preview_type; }
+  void        set_preview_type(PreviewType type);
+
 public slots:
   void clear_preview();
   void update_preview();

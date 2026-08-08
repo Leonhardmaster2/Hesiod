@@ -121,6 +121,28 @@ void DataPreview::contextMenuEvent(QContextMenuEvent *event)
 
 const QPixmap &DataPreview::get_preview_pixmap() const { return this->preview_pixmap; }
 
+void DataPreview::set_preview_port_index(int port_index)
+{
+  auto p_model = this->model.lock();
+  if (!p_model || port_index < 0 || port_index >= p_model->get_nports())
+    return;
+
+  if (this->preview_port_index == port_index)
+    return;
+
+  this->preview_port_index = port_index;
+  this->update_preview();
+}
+
+void DataPreview::set_preview_type(PreviewType type)
+{
+  if (this->preview_type == type)
+    return;
+
+  this->preview_type = type;
+  this->update_preview();
+}
+
 void DataPreview::update_preview()
 {
   auto p_model = this->model.lock();

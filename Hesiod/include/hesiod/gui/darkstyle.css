@@ -292,12 +292,15 @@ QPlainTextEdit {
 }
 
 /* QToolTip ---------------------------------------------------------------- */
+/* The node documentation tooltip is a dense rich-text panel, so it reads as a
+   raised surface: deep ground, hairline border, square corners, and enough
+   padding that the content is not crammed against the frame. */
 QToolTip {
-    background-color: COLOR_BG_PRIMARY;
+    background-color: COLOR_BG_DEEP;
     color: COLOR_TEXT_PRIMARY;
-    padding: 4px;
+    padding: 10px;
     border-radius: 0px;
-    border: 1px solid COLOR_BG_SECONDARY;
+    border: 1px solid COLOR_BORDER;
 }
 
 /* QProgressBar ------------------------------------------------------------ */

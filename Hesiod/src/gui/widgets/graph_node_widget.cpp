@@ -6,6 +6,7 @@
 
 #include "hesiod/app/hesiod_application.hpp"
 #include "hesiod/gui/widgets/custom_qmenu.hpp"
+#include "hesiod/gui/widgets/data_preview.hpp"
 #include "hesiod/gui/widgets/graph_config_widgets/graph_config_dialog.hpp"
 #include "hesiod/gui/widgets/graph_node_widget.hpp"
 #include "hesiod/gui/widgets/gui_utils.hpp"
@@ -1123,19 +1124,161 @@ void GraphNodeWidget::on_node_right_clicked(const std::string &node_id, QPointF 
 {
   Logger::log()->trace("GraphNodeWidget::on_node_right_clicked: id {}", node_id);
 
-  // only show custom menu if clicked inside the top area of the node,
+  gngui::GraphicsNode *p_gx_node = this->get_graphics_node_by_id(node_id);
+  if (!p_gx_node)
+    return;
+
+  // only show the custom menu if clicked inside the top area of the node,
   // outside the embedded widget
   {
-    gngui::GraphicsNode *p_gx_node = this->get_graphics_node_by_id(node_id);
-    if (!p_gx_node)
-      return;
-
     QPointF item_pos = scene_pos - p_gx_node->scenePos();
     if (item_pos.y() >= p_gx_node->get_geometry().widget_pos.y())
       return;
   }
 
-  // settings widget
+  this->show_node_display_menu(node_id, p_gx_node);
+}
+
+void GraphNodeWidget::show_node_display_menu(const std::string   &node_id,
+                                             gngui::GraphicsNode *p_gx_node)
+{
+  QMenu menu(this);
+
+  // --- Thumbnail -----------------------------------------------------------
+
+  DataPreview *preview = nullptr;
+  if (auto *node_widget = qobject_cast<NodeWidget *>(p_gx_node->get_widget()))
+    preview = node_widget->get_data_preview();
+
+  menu.addSection(tr("Thumbnail"));
+
+  QAction *show_thumb = menu.addAction(tr("Show thumbnail"));
+  show_thumb->setCheckable(true);
+  show_thumb->setChecked(p_gx_node->get_is_widget_visible());
+
+  // which output the thumbnail renders, and how - the same two choices the
+  // preview offers on its own right-click, surfaced here so they are
+  // reachable without hitting the thumbnail itself
+  std::map<QAction *, int>         port_actions;
+  std::map<QAction *, PreviewType> type_actions;
+
+  if (preview && p_gx_node->get_is_widget_visible())
+  {
+    QMenu *source = menu.addMenu(tr("Thumbnail source"));
+
+    for (int k = 0; k < p_gx_node->get_nports(); k++)
+    {
+      if (p_gx_node->get_port_type(k) != gngui::PortType::OUT)
+        continue;
+
+      QAction *action = source->addAction(
+          QString::fromStdString(p_gx_node->get_port_caption(k)));
+      action->setCheckable(true);
+      action->setChecked(k == preview->get_preview_port_index());
+      port_actions[action] = k;
+    }
+
+    if (source->isEmpty())
+      source->setEnabled(false);
+
+    QMenu *type = menu.addMenu(tr("Thumbnail style"));
+    for (const auto &[label, value] : preview_type_map)
+    {
+      QAction *action = type->addAction(QString::fromStdString(label));
+      action->setCheckable(true);
+      action->setChecked(value == preview->get_preview_type());
+      type_actions[action] = value;
+    }
+  }
+
+  // --- Pins ----------------------------------------------------------------
+
+  menu.addSection(tr("Pins"));
+
+  QAction *show_labels = menu.addAction(tr("Show pin names"));
+  show_labels->setCheckable(true);
+  show_labels->setChecked(p_gx_node->get_show_port_labels());
+
+  std::map<QAction *, int> pin_actions;
+  {
+    QMenu *pins = menu.addMenu(tr("Visible pins"));
+
+    for (int k = 0; k < p_gx_node->get_nports(); k++)
+    {
+      QAction *action = pins->addAction(
+          QString::fromStdString(p_gx_node->get_port_caption(k)));
+      action->setCheckable(true);
+      action->setChecked(p_gx_node->is_port_visible(k));
+
+      // a wired pin cannot be hidden: leave it checked and disabled rather
+      // than letting the click silently do nothing
+      if (p_gx_node->is_port_connected(k))
+      {
+        action->setEnabled(false);
+        action->setToolTip(tr("connected pins stay visible"));
+      }
+
+      pin_actions[action] = k;
+    }
+
+    QAction *all = pins->addAction(tr("Show all"));
+    all->setCheckable(false);
+    pin_actions[all] = -1;
+  }
+
+  // --- Node settings -------------------------------------------------------
+
+  menu.addSeparator();
+  QAction *settings = menu.addAction(tr("Node settings..."));
+
+  // --- Execute -------------------------------------------------------------
+
+  QAction *selected = menu.exec(QCursor::pos());
+  if (!selected)
+    return;
+
+  if (selected == show_thumb)
+  {
+    p_gx_node->set_widget_visibility(!p_gx_node->get_is_widget_visible());
+    return;
+  }
+
+  if (selected == show_labels)
+  {
+    p_gx_node->set_show_port_labels(!p_gx_node->get_show_port_labels());
+    return;
+  }
+
+  if (selected == settings)
+  {
+    this->show_node_settings_popup(node_id);
+    return;
+  }
+
+  if (auto it = port_actions.find(selected); it != port_actions.end())
+  {
+    preview->set_preview_port_index(it->second);
+    return;
+  }
+
+  if (auto it = type_actions.find(selected); it != type_actions.end())
+  {
+    preview->set_preview_type(it->second);
+    return;
+  }
+
+  if (auto it = pin_actions.find(selected); it != pin_actions.end())
+  {
+    if (it->second < 0)
+      p_gx_node->set_all_ports_visible(true);
+    else
+      p_gx_node->set_port_visible(it->second, !p_gx_node->is_port_visible(it->second));
+    return;
+  }
+}
+
+void GraphNodeWidget::show_node_settings_popup(const std::string &node_id)
+{
   auto gno = this->p_graph_node.lock();
   if (!gno)
     return;

@@ -26,13 +26,21 @@ struct StyleSettings
   nlohmann::json json_to() const;
 
   // --- Data
+  // Port / link colours, one distinct hue per data type so a pin's colour
+  // says what it carries. Muted accents from the industrial design language
+  // rather than saturated primaries: they sit on the #2e2e2e node body
+  // without glowing, and stay separable at small port sizes.
+  //
+  // VirtualArray (the heightmap that most ports carry) used to be near-white,
+  // which made the whole graph read monochrome and defeated the point of
+  // colouring pins at all. It is the steel blue now.
   std::map<std::string, QColor> data_color_map = {
-      {typeid(hmap::Array).name(), QColor(255, 121, 198, 255)},
-      {typeid(hmap::Cloud).name(), QColor(139, 233, 253, 255)},
-      {typeid(hmap::VirtualArray).name(), QColor(248, 248, 242, 255)},
-      {typeid(hmap::VirtualTexture).name(), QColor(189, 147, 249, 255)},
-      {typeid(hmap::Path).name(), QColor(255, 184, 108, 255)},
-      {typeid(std::vector<float>).name(), QColor(98, 114, 164, 255)},
+      {typeid(hmap::VirtualArray).name(), QColor("#7d9cc0")},   // heightmap
+      {typeid(hmap::Array).name(), QColor("#3aa899")},          // array / mask
+      {typeid(hmap::VirtualTexture).name(), QColor("#a08bb8")}, // texture
+      {typeid(hmap::Cloud).name(), QColor("#cfa143")},          // point cloud
+      {typeid(hmap::Path).name(), QColor("#c06478")},           // path
+      {typeid(std::vector<float>).name(), QColor("#8fa96b")},   // scalar list
   };
 
   std::map<std::string, QColor> category_color_map = {

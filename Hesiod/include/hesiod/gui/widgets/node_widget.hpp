@@ -33,6 +33,9 @@ public:
 
   QSize sizeHint() const override;
 
+  // the node's right-click menu drives the thumbnail from outside
+  DataPreview *get_data_preview() const { return this->data_preview; }
+
 public slots:
   virtual void on_compute_finished();
   virtual void on_compute_started();

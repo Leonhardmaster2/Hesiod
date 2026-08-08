@@ -105,6 +105,11 @@ public slots:
   void        on_node_reload_request(const std::string &node_id);
   void        on_node_right_clicked(const std::string &node_id, QPointF scene_pos);
 
+  // the node's right-click menu: what the node body shows (thumbnail source
+  // and style, which pins are visible, whether pin names are drawn)
+  void show_node_display_menu(const std::string &node_id, gngui::GraphicsNode *p_gx_node);
+  void show_node_settings_popup(const std::string &node_id);
+
   void on_nodes_copy_request(const std::vector<std::string> &id_list,
                              const std::vector<QPointF>     &scene_pos_list);
   void on_nodes_duplicate_request(const std::vector<std::string> &id_list,

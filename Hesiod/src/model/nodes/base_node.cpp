@@ -2,6 +2,7 @@
  * Public License. The full license is in the file LICENSE, distributed with
  * this software. */
 #include <algorithm>
+#include <cctype>
 #include <format>
 #include <fstream>
 #include <new>
@@ -9,6 +10,8 @@
 #include <unordered_map>
 
 #include <QCoreApplication>
+
+#include "gnodegui/style.hpp"
 
 #include "hesiod/app/hesiod_application.hpp"
 #include "hesiod/logger.hpp"
@@ -400,57 +403,169 @@ std::string BaseNode::get_documentation_short() const
   return str;
 }
 
+namespace
+{
+
+// Industrial-panel ink, matching the properties panel and the node canvas.
+// Only text encodes state here; every fill is either a surface or an accent.
+constexpr const char *DOC_INK_TITLE = "#ffffff";
+constexpr const char *DOC_INK_BODY = "#c9c9c9";
+constexpr const char *DOC_INK_MUTED = "#9a9a9a";
+constexpr const char *DOC_INK_FAINT = "#808080";
+constexpr const char *DOC_RULE = "#1a1a1a";
+
+std::string doc_upper(const std::string &s)
+{
+  std::string out = s;
+  std::transform(out.begin(),
+                 out.end(),
+                 out.begin(),
+                 [](unsigned char c) { return char(std::toupper(c)); });
+  return out;
+}
+
+// The doc JSON names a data type in short form ("VirtualArray") while the
+// style map is keyed by typeid().name() ("struct hmap::VirtualArray"), so
+// match on the tail. Keeping these swatches in step with the pin colours is
+// the whole point: the tooltip is where you learn what a colour means.
+std::string doc_data_type_color(const std::string &short_name)
+{
+  if (!short_name.empty())
+    for (const auto &[key, color] : GN_STYLE->node.color_port_data)
+      if (key.size() >= short_name.size() &&
+          key.compare(key.size() - short_name.size(), short_name.size(), short_name) == 0)
+        return color.name().toStdString();
+
+  return GN_STYLE->node.color_port_data_default.name().toStdString();
+}
+
+// Tooltip width in px. Qt sizes a tooltip to its content, so without a cap
+// the longest port description sets the width and the panel sprawls.
+constexpr int DOC_WIDTH = 330;
+
+// one "<swatch> name (type) / description" block.
+// NB. no empty spacer rows: Qt gives every table row a full line box, so a
+// <td height='6'> spacer costs a whole text line, not 6px. Spacing comes
+// from cellpadding and paragraph margins instead.
+std::string doc_port_row(const std::string &caption,
+                         const std::string &dtype,
+                         const std::string &description)
+{
+  std::string row;
+
+  row += "<tr>";
+  row += std::format("<td width='2' bgcolor='{}'></td>", doc_data_type_color(dtype));
+  row += "<td width='6'></td>";
+  row += "<td>";
+  row += std::format("<font color='{}'><b>{}</b></font>", DOC_INK_TITLE, caption);
+  row += std::format("&nbsp;&nbsp;<font color='{}'>{}</font>", DOC_INK_FAINT, dtype);
+  row += std::format("<br><font color='{}'>{}</font>", DOC_INK_MUTED, description);
+  row += "</td></tr>";
+
+  return row;
+}
+
+std::string doc_section_label(const std::string &text)
+{
+  return std::format("<p style='margin-top:8px; margin-bottom:2px'>"
+                     "<font color='{}'><b>{}</b></font></p>",
+                     DOC_INK_MUTED,
+                     text);
+}
+
+} // namespace
+
 std::string BaseNode::get_documentation_short_html() const
 {
-  std::string html = "<div><font size=\"-1\">";
-
-  std::string font_color_tag = std::format(
-      "<font color='{}'>",
-      HSD_CTX.app_settings.colors.text_secondary.name().toStdString());
+  // Qt rich text is an HTML-4 subset: no flexbox, no letter-spacing, no
+  // text-transform. Layout comes from tables and the uppercasing is done in
+  // C++, which is why this reads more like markup than a stylesheet.
+  std::string html;
 
   try
   {
-    html += "<b>" + this->get_label() + "</b><br>";
+    // everything one step down from the UI font: this is a dense reference
+    // panel, not body copy
+    html += std::format("<div style='width:{}px'><font size='-1'>", DOC_WIDTH);
 
-    // category and description
-    if (this->documentation.contains("category"))
-    {
-      html += "<i>" + this->documentation["category"].get<std::string>() + "</i>";
-    }
+    // --- identity: accent index mark + uppercase title, like the node's
+    //     caption strip and the properties-panel Section header
+    const std::string category = this->documentation.value("category", "");
+    const std::string accent = gngui::get_color_from_category(this->get_category())
+                                   .name()
+                                   .toStdString();
 
-    // main description
-    html += font_color_tag;
-    html += std::format(
-        "<p>{}</p>",
-        this->documentation.value("description", "No description available"));
-    html += "</font>";
+    html += std::format("<table width='{}' cellspacing='0' cellpadding='0'><tr>",
+                        DOC_WIDTH);
+    html += std::format("<td width='3' bgcolor='{}'></td>", accent);
+    html += "<td width='7'></td>";
+    html += std::format("<td><font color='{}'><b>{}</b></font>",
+                        DOC_INK_TITLE,
+                        doc_upper(this->get_label()));
+    if (!category.empty())
+      html += std::format("<br><font color='{}'>{}</font>", DOC_INK_MUTED, category);
+    html += "</td></tr></table>";
 
-    // ports
+    // hairline rule (a one-row table, not stacked spacer rows)
+    html += std::format("<table width='{}' cellspacing='0' cellpadding='0'>"
+                        "<tr><td bgcolor='{}'><font size='-4'>&nbsp;</font></td></tr>"
+                        "</table>",
+                        DOC_WIDTH,
+                        DOC_RULE);
+
+    // --- description
+    html += std::format("<p style='margin-top:6px; margin-bottom:0'>"
+                        "<font color='{}'>{}</font></p>",
+                        DOC_INK_BODY,
+                        this->documentation.value("description",
+                                                  "No description available"));
+
+    // --- ports, split into inputs and outputs so the direction is legible
+    //     at a glance instead of buried in each line
     if (this->documentation.contains("ports") && this->documentation["ports"].is_object())
     {
-      // html += "Ports";
-      html += font_color_tag;
-      html += "<ul>";
+      std::string inputs;
+      std::string outputs;
 
       for (const auto &[key, port] : this->documentation["ports"].items())
       {
         const std::string caption = port.value("caption", key);
-        const std::string type = port.value("type", "Unknown");
+        const std::string type = port.value("type", "");
         const std::string dtype = port.value("data_type", "Unknown");
         const std::string description = port.value("description", "No description");
 
-        html += "<li>";
-        html += "<b>" + caption + "</b>";
-        html += " &mdash; ";
-        html += "<i>" + type + "</i>";
-        html += " (" + dtype + ")<br>";
-        html += description;
-        html += "</li>";
+        const std::string row = doc_port_row(caption, dtype, description);
+
+        // the doc's "type" field is free-form ("input" / "in" / "output"),
+        // so classify on the leading letters rather than an exact match
+        if (doc_upper(type).rfind("OUT", 0) == 0)
+          outputs += row;
+        else
+          inputs += row;
       }
-      html += "</ul></font>";
+
+      // the section labels are block elements, so each list is its own table
+      // rather than one table with label rows wedged between the entries
+      if (!inputs.empty())
+      {
+        html += doc_section_label("INPUTS");
+        html += std::format(
+            "<table width='{}' cellspacing='0' cellpadding='3'>{}</table>",
+            DOC_WIDTH,
+            inputs);
+      }
+
+      if (!outputs.empty())
+      {
+        html += doc_section_label("OUTPUTS");
+        html += std::format(
+            "<table width='{}' cellspacing='0' cellpadding='3'>{}</table>",
+            DOC_WIDTH,
+            outputs);
+      }
     }
 
-    html += "</div>";
+    html += "</font></div>";
   }
   catch (const std::exception &e)
   {

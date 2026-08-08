@@ -138,7 +138,28 @@ void Viewer::on_node_deselected(const std::string &new_id)
   if (this->is_node_pinned)
     return;
 
-  // clear everything
+  // Deselecting is not a request to see nothing. Clicking empty canvas used
+  // to blank the viewport, which meant losing the terrain every time you
+  // dropped the selection; keep showing the last node instead. A genuine
+  // clear still happens when that node is deleted (on_node_deleted) or when
+  // the graph itself goes away.
+  if (this->p_graph_node_widget)
+  {
+    const std::vector<std::string> selected_ids = this->p_graph_node_widget
+                                                      ->get_selected_node_ids();
+
+    if (!selected_ids.empty())
+    {
+      // something else is still selected: follow it
+      this->on_node_selected(selected_ids.back());
+      return;
+    }
+  }
+
+  // nothing selected at all: hold the last node on screen
+  if (!this->current_node_id.empty() && this->safe_get_node())
+    return;
+
   this->clear();
 }
 
