@@ -75,15 +75,19 @@ add_compile_definitions(
 # Subdirectories
 # ------------------------------
 add_subdirectory(external)
+add_subdirectory(Hesiod)
 
 # The upstream Meta snapshot used by current Hesiod declares std::ostringstream
 # in a public trait header without including <sstream>. Keep this compatibility
-# workaround local to Meta on AppleClang until the dependency fixes its header.
-if(APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND TARGET meta)
-  target_compile_options(meta PRIVATE -include sstream)
+# workaround local to Meta consumers on AppleClang until the dependency fixes
+# its header.
+if(APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  foreach(_meta_consumer meta meta_qt hesiod)
+    if(TARGET ${_meta_consumer})
+      target_compile_options(${_meta_consumer} PRIVATE -include sstream)
+    endif()
+  endforeach()
 endif()
-
-add_subdirectory(Hesiod)
 
 if(HESIOD_ENABLE_GENERATE_APP_IMAGE)
   add_subdirectory(scripts/generate_appimage)
