@@ -1,10 +1,6 @@
 cmake_minimum_required(VERSION 3.12)
 project(hesiod-root VERSION 0.6.0)
 
-if(APPLE)
-  message(FATAL_ERROR "macOS is NOT supported by this project.")
-endif()
-
 set(EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR}/bin)
 
 # Version info
@@ -18,7 +14,15 @@ add_compile_definitions(
 # ------------------------------
 # Options
 # ------------------------------
-option(HESIOD_ENABLE_GENERATE_APP_IMAGE "Enable AppImage generation" ON)
+# AppImage is a Linux packaging format: disabled by default elsewhere.
+if(UNIX AND NOT APPLE)
+  set(_appimage_default ON)
+else()
+  set(_appimage_default OFF)
+endif()
+
+option(HESIOD_ENABLE_GENERATE_APP_IMAGE "Enable AppImage generation"
+       ${_appimage_default})
 
 option(HESIOD_MINIMAL_NODE_SET
        "Use a minimal set of nodes (ADVANCED DEV ONLY!!!)" OFF)
@@ -45,6 +49,23 @@ find_package(Qt6 REQUIRED COMPONENTS Core Widgets OpenGL OpenGLWidgets
                                      WebEngineWidgets)
 find_package(nlohmann_json REQUIRED)
 find_package(ZLIB REQUIRED)
+
+# macOS does not expose the OpenCL C/C++ headers in the default SDK paths.
+if(APPLE)
+  if(NOT DEFINED HOMEBREW_PREFIX)
+    execute_process(
+      COMMAND brew --prefix
+      OUTPUT_VARIABLE HOMEBREW_PREFIX
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      ERROR_QUIET)
+  endif()
+
+  foreach(_keg opencl-headers opencl-clhpp-headers)
+    if(EXISTS "${HOMEBREW_PREFIX}/opt/${_keg}/include")
+      include_directories("${HOMEBREW_PREFIX}/opt/${_keg}/include")
+    endif()
+  endforeach()
+endif()
 
 add_compile_definitions(
   CL_HPP_MINIMUM_OPENCL_VERSION=120 CL_HPP_TARGET_OPENCL_VERSION=120

@@ -46,8 +46,13 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     message(STATUS "HESIOD_ENABLE_LTO is enabled")
     target_compile_options(hesiod_options INTERFACE -ffunction-sections
                                                     -fdata-sections -flto)
-    target_link_options(hesiod_options INTERFACE -Wl,--gc-sections
-                        -Wl,--print-gc-sections)
+    # GNU ld and Apple ld64 use different dead-stripping flags.
+    if(APPLE)
+      target_link_options(hesiod_options INTERFACE -Wl,-dead_strip)
+    else()
+      target_link_options(hesiod_options INTERFACE -Wl,--gc-sections
+                          -Wl,--print-gc-sections)
+    endif()
   endif()
 
   if(HESIOD_MINIMAL_NODE_SET)
