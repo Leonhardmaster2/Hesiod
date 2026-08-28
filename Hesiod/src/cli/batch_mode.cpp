@@ -409,29 +409,62 @@ void run_phase4_benchmark(const std::string &filename,
               << '\n';
   }
 
-  // Exercise dirty-node propagation on the real branch point. SpectralEqualizer
-  // remains cached; changing Thermal(11) must update Thermal and its Blend(10)
-  // consumer without rebuilding the unrelated branch.
+  // Exercise dirty-node propagation on the real branch point. The default
+  // check retains the Phase 4 Thermal edit. Phase 5 can request the complete
+  // four-node matrix without making every timing sample pay for four extra
+  // graph updates.
   ::setenv("HESIOD_METAL_RESIDENT", "1", 1);
-  GraphManager edited;
-  edited.load_from_file(filename, &config);
-  if (!edited.get_graph_order().empty())
-  {
+  const bool phase5_edit_matrix =
+      std::getenv("HESIOD_PHASE5_EDIT_MATRIX") &&
+      std::string(std::getenv("HESIOD_PHASE5_EDIT_MATRIX")) == "1";
+
+  auto run_edit = [&](const char *label, const char *node_id, auto mutate) {
+    GraphManager edited;
+    edited.load_from_file(filename, &config);
+    if (edited.get_graph_order().empty()) return;
+
     auto *graph = edited.get_graph_ref_by_id(edited.get_graph_order().front());
-    auto *thermal = graph ? graph->get_node_ref_by_id<BaseNode>("11") : nullptr;
-    if (thermal)
-    {
-      thermal->set_value<float>("duration", thermal->val<float>("duration") * 0.5f);
-      const auto edit_start = std::chrono::steady_clock::now();
-      graph->update("11");
-      const auto edit_end = std::chrono::steady_clock::now();
-      const double edit_ms =
-          std::chrono::duration<double, std::milli>(edit_end - edit_start).count();
-      const auto metrics = MetalGraphExecution::last_metrics();
-      std::cout << std::fixed << std::setprecision(3) << "PHASE4_EDIT wall_ms=" << edit_ms
-                << " resident_nodes=" << metrics.resident_nodes
-                << " host_nodes=" << metrics.host_nodes << '\n';
-    }
+    auto *node = graph ? graph->get_node_ref_by_id<BaseNode>(node_id) : nullptr;
+    if (!node) return;
+
+    mutate(*node);
+    const auto edit_start = std::chrono::steady_clock::now();
+    graph->update(node_id);
+    const auto edit_end = std::chrono::steady_clock::now();
+    const double edit_ms =
+        std::chrono::duration<double, std::milli>(edit_end - edit_start).count();
+    const auto metrics = MetalGraphExecution::last_metrics();
+    std::cout << std::fixed << std::setprecision(3) << "PHASE5_EDIT node=" << label
+              << " id=" << node_id << " wall_ms=" << edit_ms
+              << " reevaluated_nodes=" << metrics.node_executions.size()
+              << " resident_nodes=" << metrics.resident_nodes
+              << " host_nodes=" << metrics.host_nodes
+              << " uploads=" << metrics.host_uploads
+              << " upload_bytes=" << metrics.host_upload_bytes
+              << " readbacks=" << metrics.host_readbacks
+              << " readback_bytes=" << metrics.host_readback_bytes << '\n';
+  };
+
+  if (phase5_edit_matrix)
+  {
+    run_edit("CoherentNoise", "8", [](BaseNode &node) {
+      node.set_value<int>("seed", node.val<int>("seed") + 1);
+    });
+    run_edit("SpectralEqualizer", "9", [](BaseNode &node) {
+      node.set_value<float>("rmax", node.val<float>("rmax") * 0.9f);
+    });
+    run_edit("Thermal", "11", [](BaseNode &node) {
+      node.set_value<float>("duration", node.val<float>("duration") * 0.5f);
+    });
+    run_edit("Blend", "10", [](BaseNode &node) {
+      node.set_value<float>("input1_weight", 0.75f);
+    });
+  }
+  else
+  {
+    run_edit("Thermal", "11", [](BaseNode &node) {
+      node.set_value<float>("duration", node.val<float>("duration") * 0.5f);
+    });
   }
 
   ::unsetenv("HESIOD_METAL_RESIDENT");
