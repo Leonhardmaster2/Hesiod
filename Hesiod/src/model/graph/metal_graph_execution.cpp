@@ -9,6 +9,10 @@
 #include <stdexcept>
 #include <typeinfo>
 
+#if defined(__APPLE__)
+#include <mach/mach.h>
+#endif
+
 #include "hesiod/logger.hpp"
 #include "hesiod/model/nodes/base_node.hpp"
 
@@ -27,6 +31,27 @@ bool is_false_value(const char *value)
   const std::string setting(value);
   return setting == "0" || setting == "false" || setting == "FALSE" ||
          setting == "off" || setting == "OFF";
+}
+
+struct ProcessMemoryMetrics
+{
+  std::uint64_t rss_bytes = 0;
+  std::uint64_t peak_rss_bytes = 0;
+};
+
+ProcessMemoryMetrics process_memory_metrics()
+{
+#if defined(__APPLE__)
+  mach_task_basic_info info{};
+  mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
+  if (task_info(mach_task_self(),
+                MACH_TASK_BASIC_INFO,
+                reinterpret_cast<task_info_t>(&info),
+                &count) == KERN_SUCCESS)
+    return {static_cast<std::uint64_t>(info.resident_size),
+            static_cast<std::uint64_t>(info.resident_size_max)};
+#endif
+  return {};
 }
 
 } // namespace
@@ -82,7 +107,8 @@ bool MetalGraphExecution::environment_enabled()
 
 bool MetalGraphExecution::resident_candidate(const std::string &node_type)
 {
-  return node_type == "Thermal" || node_type == "Blend";
+  return node_type == "CoherentNoise" || node_type == "SpectralEqualizer" ||
+         node_type == "Thermal" || node_type == "Blend";
 }
 
 void MetalGraphExecution::prepare_node(BaseNode &node)
@@ -227,7 +253,14 @@ void MetalGraphExecution::capture_metrics()
   last_metrics_value.graph_id = this->graph_id_;
   last_metrics_value.enabled = this->enabled_ && this->session_ != nullptr;
   if (last_metrics_value.enabled)
+  {
     last_metrics_value.device = hmap::gpu::metal::device_name();
+    last_metrics_value.recommended_max_working_set_bytes =
+        hmap::gpu::metal::capabilities().recommended_max_working_set_size;
+  }
+  const auto process_memory = process_memory_metrics();
+  last_metrics_value.process_rss_bytes = process_memory.rss_bytes;
+  last_metrics_value.process_peak_rss_bytes = process_memory.peak_rss_bytes;
   last_metrics_value.host_uploads = this->host_uploads_;
   last_metrics_value.host_readbacks = this->host_readbacks_;
   last_metrics_value.host_upload_bytes = this->host_upload_bytes_;

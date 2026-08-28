@@ -336,6 +336,20 @@ void print_phase4_run(const char *label, const Phase4Run &run)
             << " uploads=" << m.host_uploads << " upload_bytes=" << m.host_upload_bytes
             << " readbacks=" << m.host_readbacks
             << " readback_bytes=" << m.host_readback_bytes
+            << " rss_bytes=" << m.process_rss_bytes
+            << " peak_rss_bytes=" << m.process_peak_rss_bytes
+            << " recommended_working_set_bytes="
+            << m.recommended_max_working_set_bytes
+            << " resident_bytes=" << m.metal_stats.resident_bytes
+            << " peak_resident_bytes=" << m.metal_stats.peak_resident_bytes
+            << " buffer_allocations=" << m.metal_stats.buffer_allocations
+            << " buffer_reuses=" << m.metal_stats.buffer_reuses
+            << " bytes_allocated=" << m.metal_stats.bytes_allocated
+            << " bytes_reused=" << m.metal_stats.bytes_reused
+            << " allocation_ms=" << m.metal_stats.allocation_ms
+            << " upload_ms=" << m.metal_stats.upload_ms
+            << " wait_ms=" << m.metal_stats.wait_ms
+            << " readback_ms=" << m.metal_stats.readback_ms
             << " command_buffers=" << m.metal_stats.command_buffers
             << " encoders=" << m.metal_stats.encoders
             << " synchronizations=" << m.metal_stats.synchronization_count
@@ -364,8 +378,19 @@ void run_phase4_benchmark(const std::string &filename,
   config.set_tiling(benchmark_tiling);
   config.set_overlap(benchmark_overlap);
 
-  const Phase4Run fallback = phase4_evaluate(filename, config, false);
-  const Phase4Run resident = phase4_evaluate(filename, config, true);
+  Phase4Run fallback;
+  Phase4Run resident;
+  if (const char *order = std::getenv("HESIOD_PHASE4_ORDER");
+      order && std::string(order) == "resident-first")
+  {
+    resident = phase4_evaluate(filename, config, true);
+    fallback = phase4_evaluate(filename, config, false);
+  }
+  else
+  {
+    fallback = phase4_evaluate(filename, config, false);
+    resident = phase4_evaluate(filename, config, true);
+  }
   constexpr double phase4_parity_tolerance = 1e-2;
 
   print_phase4_run("fallback", fallback);
