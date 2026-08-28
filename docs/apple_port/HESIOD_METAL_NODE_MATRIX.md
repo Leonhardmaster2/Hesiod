@@ -3,6 +3,7 @@
 | Node or boundary | Phase 4 path | Resident eligibility / fallback |
 |---|---|---|
 | CoherentNoise / HSD `NoiseFbm` | Resident Metal or host fallback | Resident FBM only for Metal-supported noise, no envelope, single tile, and identity post-processing except active range remap; all other groups/configurations fall back |
+| GaborWaveFbm | Resident Metal or host fallback | Resident whole-logical-array Gabor fBm when no envelope and no nontrivial post-process; active range remap uses the resident normalize reduction; other cases use the original tiled path |
 | SpectralEqualizer | Resident Metal or host fallback | Resident no-mask, single-tile blur pyramid and band rebuild; nontrivial post-processing, masks, and tiled configurations fall back |
 | Thermal | Resident Metal or host fallback | Resident only for unmasked Standard/Linear, no deposition, no scale-talus, identity post-process; all other forms fall back |
 | Blend | Resident Metal or host fallback | Resident only for ADD, no swap, identity post-process; all other methods fall back |
@@ -23,3 +24,11 @@ Phase 5 adds HighMap `DeviceSession::noise_fbm`, `smooth_cpulse`,
 with no host compute nodes, no uploads, and one final readback. The resident
 graph policy remains explicit and capability-based; it is not a universal
 scheduler.
+
+Phase 6 adds the GaborWaveFbm entry after a corpus audit found it in 178 graph
+nodes across the parseable HSD corpus. Its tiled configuration is deliberately
+qualified as a whole-logical-array operation: VirtualArray gathers the logical
+array once and scatters it back through its existing tile/halo mapping. The
+downstream boundary and stitching nodes remain host boundaries. An optional,
+graph-scoped completed-DeviceArray cache is off by default and does not change
+any eligibility rule.
