@@ -1,6 +1,6 @@
 [submodule "external/HighMap"]
 	path = external/HighMap
-	url = git@github.com:ottolink-dev/HighMap.git
+	url = https://github.com/Leonhardmaster2/HighMap.git
 [submodule "external/args"]
 	path = external/args
 	url = git@github.com:Taywee/args.git
