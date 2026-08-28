@@ -37,6 +37,10 @@ void run_batch_mode(const std::string &filename,
                     const glm::ivec2  &tiling,
                     float              overlap,
                     const GraphConfig *p_input_model_config = nullptr);
+void run_phase4_benchmark(const std::string &filename,
+                          const glm::ivec2  &shape,
+                          const glm::ivec2  &tiling,
+                          float              overlap);
 void run_node_inventory();
 void run_snapshot_generation();
 

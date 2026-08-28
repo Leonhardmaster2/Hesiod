@@ -23,6 +23,7 @@
 #include "hesiod/model/nodes/base_node.hpp"
 #include "hesiod/model/nodes/legacy/legacy_converter.hpp"
 #include "hesiod/model/nodes/node_factory.hpp"
+#include "hesiod/model/graph/metal_graph_execution.hpp"
 #include "hesiod/model/utils.hpp"
 
 namespace hesiod
@@ -99,6 +100,9 @@ void BaseNode::compute()
 
   try
   {
+    if (auto *execution = MetalGraphExecution::current())
+      execution->prepare_node(*this);
+
     this->compute_fct(*this);
   }
   catch (const std::bad_alloc &)

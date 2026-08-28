@@ -7,9 +7,12 @@
 
 #include "highmap/dbg/timer.hpp"
 
+#include "meta/metadata/keys.hpp"
+
 #include "hesiod/model/nodes/attributes.hpp"
 
 #include "hesiod/logger.hpp"
+#include "hesiod/model/graph/metal_graph_execution.hpp"
 #include "hesiod/model/nodes/base_node.hpp"
 #include "hesiod/model/nodes/post_process.hpp"
 
@@ -68,6 +71,73 @@ void setup_thermal_node(BaseNode &node)
 // Compute
 // -----------------------------------------------------------------------------
 
+namespace
+{
+
+bool thermal_post_process_is_identity(const BaseNode &node)
+{
+  return node.val<float>("post_mix") == 1.f &&
+         !node.val<bool>("post_inverse") &&
+         node.val<float>("post_gamma") == 1.f &&
+         node.val<float>("post_gain") == 1.f &&
+         node.val<float>("post_smoothing_radius") == 0.f &&
+         !node.state_val<bool>("post_remap", meta::keys::state::active) &&
+         !node.state_val<bool>("post_saturate", meta::keys::state::active);
+}
+
+bool try_resident_thermal(BaseNode                   &node,
+                          hmap::VirtualArray        *p_in,
+                          hmap::VirtualArray        *p_out,
+                          hmap::VirtualArray        *p_deposition,
+                          const std::string        &type,
+                          float                     talus_global,
+                          float                     duration,
+                          bool                      scale_talus)
+{
+  auto *execution = MetalGraphExecution::current();
+  if (!execution || !execution->enabled() || !p_in || !p_out)
+    return false;
+
+  // The resident API intentionally covers only the unmasked Standard/Linear
+  // forms. Other thermal modes retain the existing OpenCL/CPU path.
+  if ((type != "Standard" && type != "Linear") || scale_talus ||
+      node.is_port_connected(P_MASK) || node.is_port_connected(P_DEPOSITION) ||
+      !thermal_post_process_is_identity(node))
+    return false;
+
+  const int iterations = int(duration * p_out->shape.x);
+  const float talus = talus_global / float(p_out->shape.x);
+  const hmap::Array talus_host(p_out->shape, talus);
+
+  auto input = execution->device_for(p_in);
+  auto talus_device = execution->session().upload(talus_host);
+  auto result = execution->session().thermal(std::move(input),
+                                             talus_device,
+                                             type == "Linear"
+                                                 ? int(0.5f * iterations)
+                                                 : iterations);
+  // The legacy synchronous wrapper extrapolates the borders after each
+  // operation. Keep that observable behavior in the resident path too.
+  result = execution->session().extrapolate_borders(std::move(result));
+  if (type == "Linear")
+  {
+    result = execution->session().thermal_ridge(
+        std::move(result), talus_device, int(0.5f * iterations));
+    result = execution->session().extrapolate_borders(std::move(result));
+  }
+
+  execution->bind(p_out,
+                  std::move(result),
+                  !node.is_port_connected(P_OUT));
+  execution->record_resident(
+      node,
+      type == "Linear" ? "thermal + thermal_ridge" : "thermal");
+  (void)p_deposition;
+  return true;
+}
+
+} // namespace
+
 void compute_thermal_node(BaseNode &node)
 {
   Logger::log()->trace("computing node [{}]/[{}]", node.get_label(), node.get_id());
@@ -95,6 +165,19 @@ void compute_thermal_node(BaseNode &node)
   const auto scale_talus = node.val<bool>(A_SCALE_TALUS);
   // clang-format on
 
+  if (try_resident_thermal(node,
+                           p_in,
+                           p_out,
+                           p_deposition,
+                           type,
+                           talus_global,
+                           duration,
+                           scale_talus))
+    return;
+
+  if (auto *execution = MetalGraphExecution::current())
+    execution->prepare_host_node(node);
+
   const float talus      = talus_global / float(p_out->shape.x);
   const int   iterations = int(duration * p_out->shape.x);
 
@@ -113,7 +196,8 @@ void compute_thermal_node(BaseNode &node)
 
   hmap::for_each_tile(
       {p_in, p_mask, &talus_map},
-      {p_out, p_deposition},
+      {p_out,
+       node.is_port_connected(P_DEPOSITION) ? p_deposition : nullptr},
       [&](std::vector<const hmap::Array *> in,
           std::vector<hmap::Array *>       out,
           const hmap::TileRegion &)
@@ -155,7 +239,9 @@ void compute_thermal_node(BaseNode &node)
                                    pa_mask,
                                    *pa_talus_map,
                                    iterations_half,
-                                   pa_deposition);
+                                   node.is_port_connected(P_DEPOSITION)
+                                       ? pa_deposition
+                                       : nullptr);
         }
         else if (type == "Bedrock")
         {
