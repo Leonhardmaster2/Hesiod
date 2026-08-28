@@ -18,7 +18,8 @@ namespace hesiod
 {
 
 GraphNode::GraphNode(const std::string &id, const std::shared_ptr<GraphConfig> &config)
-    : gnode::Graph(id), hmap::CoordFrame(), config(config)
+    : gnode::Graph(id), hmap::CoordFrame(), config(config),
+      metal_cache(std::make_shared<MetalGraphCache>())
 {
   Logger::log()->trace("GraphNode::GraphNode");
 
@@ -424,7 +425,7 @@ void GraphNode::update()
   if (this->update_started)
     this->update_started();
 
-  MetalGraphExecution execution(this->get_id());
+  MetalGraphExecution execution(this->get_id(), this->metal_cache);
   MetalGraphExecutionScope scope(execution);
 
   gnode::Graph::update();
@@ -452,7 +453,7 @@ void GraphNode::update(const std::vector<std::string> &node_ids)
   if (this->update_started)
     this->update_started();
 
-  MetalGraphExecution execution(this->get_id());
+  MetalGraphExecution execution(this->get_id(), this->metal_cache);
   MetalGraphExecutionScope scope(execution);
 
   gnode::Graph::update(node_ids);

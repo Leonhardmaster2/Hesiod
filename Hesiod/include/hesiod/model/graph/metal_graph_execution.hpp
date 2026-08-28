@@ -27,6 +27,57 @@ struct MetalGraphNodeExecution
   std::string detail;
 };
 
+/**
+ * @brief Optional bounded cache for completed graph resources.
+ *
+ * Entries are scoped to one GraphNode and keyed by the owning VirtualArray.
+ * The cache stores HighMap DeviceArrays, never raw Metal objects or HSD data.
+ * It is disabled unless HESIOD_METAL_PERSISTENT_CACHE=1 is explicitly set.
+ */
+class MetalGraphCache
+{
+public:
+  struct Stats
+  {
+    std::size_t hits = 0;
+    std::size_t misses = 0;
+    std::size_t evictions = 0;
+    std::size_t bytes = 0;
+    std::size_t budget_bytes = 0;
+  };
+
+  MetalGraphCache();
+
+  bool enabled() const noexcept { return this->enabled_; }
+
+  hmap::gpu::metal::DeviceArray acquire(
+      hmap::gpu::metal::DeviceSession       &session,
+      const hmap::VirtualArray              *array);
+  void store(const hmap::VirtualArray *array,
+             const hmap::gpu::metal::DeviceArray &device);
+  void invalidate(const hmap::VirtualArray *array);
+  void clear();
+  Stats stats() const noexcept { return this->stats_; }
+
+private:
+  struct Entry
+  {
+    hmap::gpu::metal::DeviceArray device;
+    glm::ivec2                    shape = {0, 0};
+    glm::ivec2                    tile_shape = {0, 0};
+    int                           halo = 0;
+    std::size_t                   bytes = 0;
+    std::uint64_t                 last_use = 0;
+  };
+
+  void evict_until_within_budget(std::size_t required_bytes);
+
+  bool enabled_ = false;
+  std::uint64_t clock_ = 0;
+  Stats stats_;
+  std::unordered_map<const hmap::VirtualArray *, Entry> entries_;
+};
+
 struct MetalGraphMetrics
 {
   std::string graph_id;
@@ -38,6 +89,13 @@ struct MetalGraphMetrics
   std::size_t host_readbacks = 0;
   std::size_t host_upload_bytes = 0;
   std::size_t host_readback_bytes = 0;
+  std::size_t cache_hits = 0;
+  std::size_t cache_misses = 0;
+  std::size_t cache_evictions = 0;
+  std::size_t persistent_cache_bytes = 0;
+  std::size_t persistent_cache_budget_bytes = 0;
+  std::size_t resident_tiles = 0;
+  std::size_t fallback_tiles = 0;
   std::uint64_t process_rss_bytes = 0;
   std::uint64_t process_peak_rss_bytes = 0;
   std::uint64_t recommended_max_working_set_bytes = 0;
@@ -55,7 +113,8 @@ struct MetalGraphMetrics
 class MetalGraphExecution
 {
 public:
-  explicit MetalGraphExecution(std::string graph_id);
+  explicit MetalGraphExecution(std::string graph_id,
+                               std::shared_ptr<MetalGraphCache> cache = {});
   ~MetalGraphExecution();
 
   MetalGraphExecution(const MetalGraphExecution &) = delete;
@@ -112,10 +171,13 @@ private:
   std::unordered_map<const hmap::VirtualArray *, bool> host_required_;
   std::unordered_set<const hmap::VirtualArray *> device_modified_;
   std::vector<MetalGraphNodeExecution>                node_executions_;
+  std::shared_ptr<MetalGraphCache>                     cache_;
   std::size_t                                          host_uploads_ = 0;
   std::size_t                                          host_readbacks_ = 0;
   std::size_t                                          host_upload_bytes_ = 0;
   std::size_t                                          host_readback_bytes_ = 0;
+  std::size_t                                          resident_tiles_ = 0;
+  std::size_t                                          fallback_tiles_ = 0;
 };
 
 class MetalGraphExecutionScope

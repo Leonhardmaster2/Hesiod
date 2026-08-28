@@ -15,6 +15,7 @@ namespace hesiod
 {
 
 class BaseNode; // forward
+class MetalGraphCache; // forward
 
 // =====================================
 // GraphNode
@@ -83,6 +84,7 @@ private:
   std::shared_ptr<GraphConfig> config;
   BroadcastMap                *p_broadcast_params = nullptr; // own by GraphManager
   gnode::EventConnection       graph_progress_conn;
+  std::shared_ptr<MetalGraphCache> metal_cache;
 };
 
 } // namespace hesiod

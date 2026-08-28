@@ -4,8 +4,11 @@
 #include "hesiod/model/graph/metal_graph_execution.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <format>
+#include <iterator>
+#include <limits>
 #include <stdexcept>
 #include <typeinfo>
 
@@ -33,6 +36,17 @@ bool is_false_value(const char *value)
          setting == "off" || setting == "OFF";
 }
 
+bool is_true_value(const char *value)
+{
+  if (!value) return false;
+  std::string setting(value);
+  std::transform(setting.begin(),
+                 setting.end(),
+                 setting.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return setting == "1" || setting == "true" || setting == "on";
+}
+
 struct ProcessMemoryMetrics
 {
   std::uint64_t rss_bytes = 0;
@@ -56,8 +70,129 @@ ProcessMemoryMetrics process_memory_metrics()
 
 } // namespace
 
-MetalGraphExecution::MetalGraphExecution(std::string graph_id)
-    : graph_id_(std::move(graph_id))
+MetalGraphCache::MetalGraphCache()
+{
+  this->enabled_ = is_true_value(std::getenv("HESIOD_METAL_PERSISTENT_CACHE"));
+  if (!this->enabled_)
+    return;
+
+  const auto capabilities = hmap::gpu::metal::capabilities();
+  this->stats_.budget_bytes = capabilities.recommended_max_working_set_size / 4;
+
+  if (const char *megabytes = std::getenv("HESIOD_METAL_CACHE_MB"))
+  {
+    char *end = nullptr;
+    const unsigned long long value = std::strtoull(megabytes, &end, 10);
+    if (end != megabytes && value > 0 &&
+        value <= std::numeric_limits<std::size_t>::max() / (1024ull * 1024ull))
+      this->stats_.budget_bytes = static_cast<std::size_t>(value) * 1024u * 1024u;
+  }
+}
+
+hmap::gpu::metal::DeviceArray MetalGraphCache::acquire(
+    hmap::gpu::metal::DeviceSession &session,
+    const hmap::VirtualArray        *array)
+{
+  if (!this->enabled_ || !array)
+    return {};
+
+  auto it = this->entries_.find(array);
+  if (it == this->entries_.end() ||
+      it->second.shape != array->shape ||
+      it->second.tile_shape != array->tile_shape ||
+      it->second.halo != array->halo)
+  {
+    if (it != this->entries_.end())
+    {
+      this->stats_.bytes -= it->second.bytes;
+      this->entries_.erase(it);
+    }
+    ++this->stats_.misses;
+    return {};
+  }
+
+  try
+  {
+    auto adopted = session.adopt_completed(it->second.device);
+    it->second.device = adopted;
+    it->second.last_use = ++this->clock_;
+    ++this->stats_.hits;
+    return adopted;
+  }
+  catch (...)
+  {
+    this->stats_.bytes -= it->second.bytes;
+    this->entries_.erase(it);
+    ++this->stats_.misses;
+    return {};
+  }
+}
+
+void MetalGraphCache::evict_until_within_budget(std::size_t required_bytes)
+{
+  while (this->stats_.bytes + required_bytes > this->stats_.budget_bytes &&
+         !this->entries_.empty())
+  {
+    auto oldest = this->entries_.begin();
+    for (auto it = std::next(this->entries_.begin()); it != this->entries_.end(); ++it)
+      if (it->second.last_use < oldest->second.last_use)
+        oldest = it;
+
+    this->stats_.bytes -= oldest->second.bytes;
+    this->entries_.erase(oldest);
+    ++this->stats_.evictions;
+  }
+}
+
+void MetalGraphCache::store(const hmap::VirtualArray *array,
+                            const hmap::gpu::metal::DeviceArray &device)
+{
+  if (!this->enabled_ || !array || device.empty())
+    return;
+
+  const std::size_t bytes = device.size() * sizeof(float);
+  auto existing = this->entries_.find(array);
+  if (existing != this->entries_.end())
+  {
+    this->stats_.bytes -= existing->second.bytes;
+    this->entries_.erase(existing);
+  }
+
+  if (bytes > this->stats_.budget_bytes)
+  {
+    ++this->stats_.evictions;
+    return;
+  }
+
+  this->evict_until_within_budget(bytes);
+  this->entries_.emplace(array,
+                         Entry{device,
+                               array->shape,
+                               array->tile_shape,
+                               array->halo,
+                               bytes,
+                               ++this->clock_});
+  this->stats_.bytes += bytes;
+}
+
+void MetalGraphCache::invalidate(const hmap::VirtualArray *array)
+{
+  if (!array) return;
+  auto it = this->entries_.find(array);
+  if (it == this->entries_.end()) return;
+  this->stats_.bytes -= it->second.bytes;
+  this->entries_.erase(it);
+}
+
+void MetalGraphCache::clear()
+{
+  this->entries_.clear();
+  this->stats_.bytes = 0;
+}
+
+MetalGraphExecution::MetalGraphExecution(std::string graph_id,
+                                         std::shared_ptr<MetalGraphCache> cache)
+    : graph_id_(std::move(graph_id)), cache_(std::move(cache))
 {
   if (!environment_enabled())
     return;
@@ -108,13 +243,24 @@ bool MetalGraphExecution::environment_enabled()
 bool MetalGraphExecution::resident_candidate(const std::string &node_type)
 {
   return node_type == "CoherentNoise" || node_type == "SpectralEqualizer" ||
-         node_type == "Thermal" || node_type == "Blend";
+         node_type == "Thermal" || node_type == "Blend" ||
+         node_type == "GaborWaveFbm";
 }
 
 void MetalGraphExecution::prepare_node(BaseNode &node)
 {
   if (!this->enabled_)
     return;
+
+  if (this->cache_ && this->cache_->enabled())
+    for (int port = 0; port < node.get_nports(); ++port)
+    {
+      if (node.get_port_type(port) != gngui::PortType::OUT ||
+          node.get_data_type(port) != typeid(hmap::VirtualArray).name())
+        continue;
+      this->cache_->invalidate(
+          static_cast<hmap::VirtualArray *>(node.get_data_ref(port)));
+    }
 
   if (!resident_candidate(node.get_node_type()))
     this->prepare_host_node(node);
@@ -149,6 +295,17 @@ hmap::gpu::metal::DeviceArray MetalGraphExecution::device_for(
   auto it = this->device_arrays_.find(array);
   if (it != this->device_arrays_.end())
     return it->second;
+
+  if (this->cache_ && this->cache_->enabled())
+  {
+    auto cached = this->cache_->acquire(*this->session_, array);
+    if (!cached.empty())
+    {
+      this->device_arrays_[array] = cached;
+      this->host_required_[array] = false;
+      return cached;
+    }
+  }
 
   const hmap::ComputeMode single_array_mode = {
       .mode = hmap::ForEachMode::VA_SINGLE_ARRAY,
@@ -213,6 +370,12 @@ void MetalGraphExecution::record_resident(const BaseNode       &node,
 {
   this->node_executions_.push_back(
       {node.get_id(), node.get_node_type(), "resident Metal", detail});
+  for (int port = 0; port < node.get_nports(); ++port)
+    if (node.get_port_type(port) == gngui::PortType::OUT &&
+        node.get_data_type(port) == typeid(hmap::VirtualArray).name())
+      if (auto *array = static_cast<hmap::VirtualArray *>(
+              const_cast<BaseNode &>(node).get_data_ref(port)))
+        this->resident_tiles_ += static_cast<std::size_t>(array->get_ntiles());
 }
 
 void MetalGraphExecution::record_host(const BaseNode       &node,
@@ -220,6 +383,12 @@ void MetalGraphExecution::record_host(const BaseNode       &node,
 {
   this->node_executions_.push_back(
       {node.get_id(), node.get_node_type(), "host fallback", detail});
+  for (int port = 0; port < node.get_nports(); ++port)
+    if (node.get_port_type(port) == gngui::PortType::OUT &&
+        node.get_data_type(port) == typeid(hmap::VirtualArray).name())
+      if (auto *array = static_cast<hmap::VirtualArray *>(
+              const_cast<BaseNode &>(node).get_data_ref(port)))
+        this->fallback_tiles_ += static_cast<std::size_t>(array->get_ntiles());
 }
 
 void MetalGraphExecution::flush()
@@ -243,6 +412,17 @@ void MetalGraphExecution::flush()
     this->materialize(array);
 
   this->session_->finish();
+
+  // Only completed resources enter the persistent cache. The cache API keeps
+  // ownership at the DeviceArray layer, so Hesiod never handles an MTLBuffer.
+  if (this->cache_ && this->cache_->enabled())
+    for (const auto *array : this->device_modified_)
+    {
+      auto it = this->device_arrays_.find(array);
+      if (it != this->device_arrays_.end())
+        this->cache_->store(array, it->second);
+    }
+
   this->capture_metrics();
   this->flushed_ = true;
 }
@@ -265,6 +445,8 @@ void MetalGraphExecution::capture_metrics()
   last_metrics_value.host_readbacks = this->host_readbacks_;
   last_metrics_value.host_upload_bytes = this->host_upload_bytes_;
   last_metrics_value.host_readback_bytes = this->host_readback_bytes_;
+  last_metrics_value.resident_tiles = this->resident_tiles_;
+  last_metrics_value.fallback_tiles = this->fallback_tiles_;
   last_metrics_value.node_executions = this->node_executions_;
   last_metrics_value.resident_nodes = std::count_if(
       this->node_executions_.begin(),
@@ -276,6 +458,15 @@ void MetalGraphExecution::capture_metrics()
       [](const auto &node) { return node.backend == "host fallback"; });
   if (this->session_)
     last_metrics_value.metal_stats = this->session_->stats();
+  if (this->cache_)
+  {
+    const auto cache_stats = this->cache_->stats();
+    last_metrics_value.cache_hits = cache_stats.hits;
+    last_metrics_value.cache_misses = cache_stats.misses;
+    last_metrics_value.cache_evictions = cache_stats.evictions;
+    last_metrics_value.persistent_cache_bytes = cache_stats.bytes;
+    last_metrics_value.persistent_cache_budget_bytes = cache_stats.budget_bytes;
+  }
 }
 
 std::string MetalGraphExecution::diagnostics() const
@@ -287,7 +478,9 @@ std::string MetalGraphExecution::diagnostics() const
   return std::format(
       "graph={} backend=Metal device={} resident_nodes={} host_nodes={} "
       "uploads={} upload_bytes={} readbacks={} readback_bytes={} "
-      "command_buffers={} encoders={} synchronizations={} gpu_ms={:.3f}",
+      "command_buffers={} encoders={} synchronizations={} gpu_ms={:.3f} "
+      "resident_tiles={} fallback_tiles={} cache_hits={} cache_misses={} "
+      "cache_evictions={} cache_bytes={} cache_budget={}",
       this->graph_id_,
       hmap::gpu::metal::device_name(),
       std::count_if(this->node_executions_.begin(),
@@ -303,7 +496,14 @@ std::string MetalGraphExecution::diagnostics() const
       stats.command_buffers,
       stats.encoders,
       stats.synchronization_count,
-      stats.gpu_execution_ms);
+      stats.gpu_execution_ms,
+      this->resident_tiles_,
+      this->fallback_tiles_,
+      this->cache_ ? this->cache_->stats().hits : 0,
+      this->cache_ ? this->cache_->stats().misses : 0,
+      this->cache_ ? this->cache_->stats().evictions : 0,
+      this->cache_ ? this->cache_->stats().bytes : 0,
+      this->cache_ ? this->cache_->stats().budget_bytes : 0);
 }
 
 MetalGraphExecutionScope::MetalGraphExecutionScope(MetalGraphExecution &execution)
