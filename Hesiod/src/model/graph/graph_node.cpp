@@ -9,7 +9,9 @@
 #include "hesiod/model/nodes/node_factory.hpp"
 #include "hesiod/model/nodes/receive_node.hpp"
 #include "hesiod/model/utils.hpp"
+#include "hesiod/model/graph/metal_graph_execution.hpp"
 
+#include <cstdlib>
 #include <iostream>
 
 namespace hesiod
@@ -422,7 +424,14 @@ void GraphNode::update()
   if (this->update_started)
     this->update_started();
 
+  MetalGraphExecution execution(this->get_id());
+  MetalGraphExecutionScope scope(execution);
+
   gnode::Graph::update();
+  execution.flush();
+
+  if (std::getenv("HESIOD_METAL_DIAGNOSTICS"))
+    Logger::log()->info("{}", execution.diagnostics());
 
   if (this->update_finished)
     this->update_finished();
@@ -443,7 +452,14 @@ void GraphNode::update(const std::vector<std::string> &node_ids)
   if (this->update_started)
     this->update_started();
 
+  MetalGraphExecution execution(this->get_id());
+  MetalGraphExecutionScope scope(execution);
+
   gnode::Graph::update(node_ids);
+  execution.flush();
+
+  if (std::getenv("HESIOD_METAL_DIAGNOSTICS"))
+    Logger::log()->info("{}", execution.diagnostics());
 
   if (this->update_finished)
     this->update_finished();

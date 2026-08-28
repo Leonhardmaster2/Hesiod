@@ -1,7 +1,15 @@
 /* Copyright (c) 2025 Otto Link. Distributed under the terms of the GNU General
  * Public License. The full license is in the file LICENSE, distributed with
  * this software. */
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <cstdlib>
 #include <filesystem>
+#include <iomanip>
+#include <iostream>
+#include <limits>
+#include <optional>
 
 #include <QTimer>
 
@@ -12,6 +20,9 @@
 #include "hesiod/gui/widgets/gui_utils.hpp"
 #include "hesiod/logger.hpp"
 #include "hesiod/model/graph/graph_manager.hpp"
+#include "hesiod/model/graph/graph_node.hpp"
+#include "hesiod/model/graph/metal_graph_execution.hpp"
+#include "hesiod/model/nodes/base_node.hpp"
 #include "hesiod/model/nodes/node_factory.hpp"
 #include "hesiod/model/nodes/post_process.hpp"
 
@@ -52,6 +63,12 @@ int parse_args(args::ArgumentParser &parser,
                                      "Execute Hesiod in batch mode",
                                      {'b', "batch"});
 
+  args::ValueFlag<std::string> phase4_benchmark(
+      group,
+      "hsd file",
+      "Run the Phase 4 resident-vs-fallback graph benchmark",
+      {"phase4-benchmark"});
+
   args::Group batch_args(group,
                          "batch mode arguments",
                          args::Group::Validators::DontCare);
@@ -77,7 +94,15 @@ int parse_args(args::ArgumentParser &parser,
   {
     parser.ParseCLI(argc, argv);
 
-    if (batch)
+    if (phase4_benchmark)
+    {
+      run_phase4_benchmark(args::get(phase4_benchmark),
+                           shape_arg ? args::get(shape_arg) : glm::ivec2(0, 0),
+                           tiling_arg ? args::get(tiling_arg) : glm::ivec2(0, 0),
+                           overlap_arg ? args::get(overlap_arg) : -1.f);
+      return 0;
+    }
+    else if (batch)
     {
       run_batch_mode(args::get(batch),
                      shape_arg ? args::get(shape_arg) : glm::ivec2(0, 0),
@@ -185,6 +210,206 @@ void run_batch_mode(const std::string &filename,
   // flatten & export if there is a configuration defined
   if (!graph_manager.get_export_param().export_path.empty())
     graph_manager.export_flatten();
+}
+
+namespace
+{
+
+struct Phase4Run
+{
+  double                         wall_ms = 0.;
+  double                         preview_ms = 0.;
+  hmap::Array                    output;
+  bool                           has_output = false;
+  MetalGraphMetrics              metrics;
+  std::vector<std::pair<std::string, NodeRuntimeInfo>> nodes;
+};
+
+struct Phase4Output
+{
+  hmap::Array data;
+  std::string node_id;
+  std::string port;
+};
+
+std::optional<Phase4Output> phase4_output(GraphManager &manager,
+                                          const GraphConfig &config)
+{
+  std::optional<Phase4Output> fallback;
+
+  for (const auto &graph_id : manager.get_graph_order())
+  {
+    auto *graph = manager.get_graph_ref_by_id(graph_id);
+    if (!graph)
+      continue;
+
+    for (const auto &[node_id, node_ptr] : graph->get_nodes())
+    {
+      auto *node = dynamic_cast<BaseNode *>(node_ptr.get());
+      if (!node)
+        continue;
+
+      for (int port = 0; port < node->get_nports(); ++port)
+      {
+        if (node->get_port_type(port) != gngui::PortType::OUT ||
+            node->get_data_type(port) != typeid(hmap::VirtualArray).name())
+          continue;
+
+        auto *array = node->get_value_ref<hmap::VirtualArray>(port);
+        if (!array)
+          continue;
+
+        Phase4Output candidate{array->to_array(config.cm_single_array),
+                               node_id,
+                               node->get_port_label(port)};
+
+        // SpectralEqualizer.hsd ends at Blend(10). Prefer that terminal
+        // output, while keeping the helper useful for other small graphs.
+        if (node->get_node_type() == "Blend")
+          return candidate;
+        fallback = std::move(candidate);
+      }
+    }
+  }
+
+  return fallback;
+}
+
+Phase4Run phase4_evaluate(const std::string &filename,
+                          GraphConfig        config,
+                          bool               resident)
+{
+  ::setenv("HESIOD_METAL_RESIDENT", resident ? "1" : "0", 1);
+
+  GraphManager manager;
+  const auto start = std::chrono::steady_clock::now();
+  manager.load_from_file(filename, &config);
+  const auto end = std::chrono::steady_clock::now();
+
+  Phase4Run result;
+  result.wall_ms = std::chrono::duration<double, std::milli>(end - start).count();
+  result.metrics = MetalGraphExecution::last_metrics();
+
+  for (const auto &graph_id : manager.get_graph_order())
+  {
+    auto *graph = manager.get_graph_ref_by_id(graph_id);
+    if (!graph)
+      continue;
+    for (const auto &[node_id, node_ptr] : graph->get_nodes())
+    {
+      if (auto *node = dynamic_cast<BaseNode *>(node_ptr.get()))
+        result.nodes.emplace_back(node_id, node->get_runtime_info());
+    }
+  }
+
+  const auto preview_start = std::chrono::steady_clock::now();
+  if (auto output = phase4_output(manager, config))
+  {
+    result.output = std::move(output->data);
+    result.has_output = true;
+  }
+  const auto preview_end = std::chrono::steady_clock::now();
+  result.preview_ms =
+      std::chrono::duration<double, std::milli>(preview_end - preview_start).count();
+
+  return result;
+}
+
+double max_abs_difference(const hmap::Array &a, const hmap::Array &b)
+{
+  if (a.shape != b.shape || a.vector.size() != b.vector.size())
+    return std::numeric_limits<double>::max();
+
+  double max_abs = 0.;
+  for (size_t i = 0; i < a.vector.size(); ++i)
+    max_abs = std::max(max_abs, std::abs((double)a.vector[i] - (double)b.vector[i]));
+  return max_abs;
+}
+
+void print_phase4_run(const char *label, const Phase4Run &run)
+{
+  const auto &m = run.metrics;
+  std::cout << std::fixed << std::setprecision(3)
+            << "PHASE4 mode=" << label << " wall_ms=" << run.wall_ms
+            << " preview_ms=" << run.preview_ms << " resident_nodes="
+            << m.resident_nodes << " host_nodes=" << m.host_nodes
+            << " uploads=" << m.host_uploads << " upload_bytes=" << m.host_upload_bytes
+            << " readbacks=" << m.host_readbacks
+            << " readback_bytes=" << m.host_readback_bytes
+            << " command_buffers=" << m.metal_stats.command_buffers
+            << " encoders=" << m.metal_stats.encoders
+            << " synchronizations=" << m.metal_stats.synchronization_count
+            << " gpu_ms=" << m.metal_stats.gpu_execution_ms << '\n';
+
+  for (const auto &[node_id, info] : run.nodes)
+    std::cout << std::fixed << std::setprecision(3) << "PHASE4_NODE mode=" << label
+              << " id=" << node_id << " update_ms=" << info.update_time
+              << " evals=" << info.eval_count << " errors=" << info.error_count << '\n';
+}
+
+} // namespace
+
+void run_phase4_benchmark(const std::string &filename,
+                          const glm::ivec2  &shape,
+                          const glm::ivec2  &tiling,
+                          float              overlap)
+{
+  Logger::log()->info("executing Phase 4 resident graph benchmark");
+
+  GraphConfig config;
+  const glm::ivec2 benchmark_shape = (shape.x && shape.y) ? shape : glm::ivec2(512, 512);
+  const glm::ivec2 benchmark_tiling = (tiling.x && tiling.y) ? tiling : glm::ivec2(1, 1);
+  const float benchmark_overlap = overlap >= 0.f ? overlap : 0.f;
+  config.set_shape(benchmark_shape);
+  config.set_tiling(benchmark_tiling);
+  config.set_overlap(benchmark_overlap);
+
+  const Phase4Run fallback = phase4_evaluate(filename, config, false);
+  const Phase4Run resident = phase4_evaluate(filename, config, true);
+  constexpr double phase4_parity_tolerance = 1e-2;
+
+  print_phase4_run("fallback", fallback);
+  print_phase4_run("resident", resident);
+
+  if (fallback.has_output && resident.has_output)
+  {
+    std::cout << std::fixed << std::setprecision(8)
+              << "PHASE4_PARITY shape=" << benchmark_shape.x << "x" << benchmark_shape.y
+              << " max_abs=" << max_abs_difference(fallback.output, resident.output)
+              << " status="
+              << (max_abs_difference(fallback.output, resident.output) <=
+                          phase4_parity_tolerance
+                      ? "PASS"
+                      : "FAIL")
+              << '\n';
+  }
+
+  // Exercise dirty-node propagation on the real branch point. SpectralEqualizer
+  // remains cached; changing Thermal(11) must update Thermal and its Blend(10)
+  // consumer without rebuilding the unrelated branch.
+  ::setenv("HESIOD_METAL_RESIDENT", "1", 1);
+  GraphManager edited;
+  edited.load_from_file(filename, &config);
+  if (!edited.get_graph_order().empty())
+  {
+    auto *graph = edited.get_graph_ref_by_id(edited.get_graph_order().front());
+    auto *thermal = graph ? graph->get_node_ref_by_id<BaseNode>("11") : nullptr;
+    if (thermal)
+    {
+      thermal->set_value<float>("duration", thermal->val<float>("duration") * 0.5f);
+      const auto edit_start = std::chrono::steady_clock::now();
+      graph->update("11");
+      const auto edit_end = std::chrono::steady_clock::now();
+      const double edit_ms =
+          std::chrono::duration<double, std::milli>(edit_end - edit_start).count();
+      const auto metrics = MetalGraphExecution::last_metrics();
+      std::cout << std::fixed << std::setprecision(3) << "PHASE4_EDIT wall_ms=" << edit_ms
+                << " resident_nodes=" << metrics.resident_nodes
+                << " host_nodes=" << metrics.host_nodes << '\n';
+    }
+  }
+
+  ::unsetenv("HESIOD_METAL_RESIDENT");
 }
 
 void run_node_inventory()
