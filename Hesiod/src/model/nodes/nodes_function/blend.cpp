@@ -93,7 +93,7 @@ bool try_resident_blend(BaseNode            &node,
                         float               input2_weight)
 {
   auto *execution = MetalGraphExecution::current();
-  if (!execution || !execution->enabled() || !p_in1 || !p_in2 || !p_out)
+  if (!execution || !execution->can_encode() || !p_in1 || !p_in2 || !p_out)
     return false;
 
   // ADD is the exact pointwise operation used by the Phase 4 workload. Keep

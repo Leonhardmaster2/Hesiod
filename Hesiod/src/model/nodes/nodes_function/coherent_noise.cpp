@@ -273,7 +273,7 @@ bool try_resident_coherent_noise(BaseNode                   &node,
                                  float                       lacunarity)
 {
   auto *execution = MetalGraphExecution::current();
-  if (!execution || !execution->enabled() || !p_out || p_env ||
+  if (!execution || !execution->can_encode() || !p_out || p_env ||
       current_group != G_FBM ||
       !resident_noise_post_process_is_supported(node) ||
       !hmap::gpu::metal::supports_noise_fbm(noise_type) ||

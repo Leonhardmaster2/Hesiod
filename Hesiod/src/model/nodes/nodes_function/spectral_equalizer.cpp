@@ -95,7 +95,7 @@ bool try_resident_spectral_equalizer(BaseNode                  &node,
                                      int                        ir_max)
 {
   auto *execution = MetalGraphExecution::current();
-  if (!execution || !execution->enabled() || !p_in || !p_out || p_mask ||
+  if (!execution || !execution->can_encode() || !p_in || !p_out || p_mask ||
       node.is_port_connected(P_MASK) ||
       p_out->get_max_tiles() != glm::ivec2(1, 1) ||
       !spectral_post_process_is_identity(node, p_in))
