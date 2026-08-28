@@ -326,6 +326,72 @@ double max_abs_difference(const hmap::Array &a, const hmap::Array &b)
   return max_abs;
 }
 
+double max_abs_difference_on_tiling_seams(const hmap::Array &a,
+                                          const hmap::Array &b,
+                                          const glm::ivec2  &tiling)
+{
+  if (a.shape != b.shape || a.vector.size() != b.vector.size())
+    return std::numeric_limits<double>::max();
+
+  double max_abs = 0.;
+  for (int j = 0; j < a.shape.y; ++j)
+    for (int i = 0; i < a.shape.x; ++i)
+    {
+      bool seam = false;
+      for (int tile_x = 1; tile_x < tiling.x; ++tile_x)
+      {
+        const int boundary = (tile_x * a.shape.x) / tiling.x;
+        seam = seam || i == boundary - 1 || i == boundary;
+      }
+      for (int tile_y = 1; tile_y < tiling.y; ++tile_y)
+      {
+        const int boundary = (tile_y * a.shape.y) / tiling.y;
+        seam = seam || j == boundary - 1 || j == boundary;
+      }
+      if (seam)
+      {
+        const std::size_t index = static_cast<std::size_t>(j) * a.shape.x + i;
+        max_abs = std::max(max_abs,
+                           std::abs(static_cast<double>(a.vector[index]) -
+                                    static_cast<double>(b.vector[index])));
+      }
+    }
+  return max_abs;
+}
+
+double max_abs_difference_off_tiling_seams(const hmap::Array &a,
+                                           const hmap::Array &b,
+                                           const glm::ivec2  &tiling)
+{
+  if (a.shape != b.shape || a.vector.size() != b.vector.size())
+    return std::numeric_limits<double>::max();
+
+  double max_abs = 0.;
+  for (int j = 0; j < a.shape.y; ++j)
+    for (int i = 0; i < a.shape.x; ++i)
+    {
+      bool seam = false;
+      for (int tile_x = 1; tile_x < tiling.x; ++tile_x)
+      {
+        const int boundary = (tile_x * a.shape.x) / tiling.x;
+        seam = seam || i == boundary - 1 || i == boundary;
+      }
+      for (int tile_y = 1; tile_y < tiling.y; ++tile_y)
+      {
+        const int boundary = (tile_y * a.shape.y) / tiling.y;
+        seam = seam || j == boundary - 1 || j == boundary;
+      }
+      if (!seam)
+      {
+        const std::size_t index = static_cast<std::size_t>(j) * a.shape.x + i;
+        max_abs = std::max(max_abs,
+                           std::abs(static_cast<double>(a.vector[index]) -
+                                    static_cast<double>(b.vector[index])));
+      }
+    }
+  return max_abs;
+}
+
 void print_phase4_run(const char *label, const Phase4Run &run)
 {
   const auto &m = run.metrics;
@@ -353,12 +419,80 @@ void print_phase4_run(const char *label, const Phase4Run &run)
             << " command_buffers=" << m.metal_stats.command_buffers
             << " encoders=" << m.metal_stats.encoders
             << " synchronizations=" << m.metal_stats.synchronization_count
-            << " gpu_ms=" << m.metal_stats.gpu_execution_ms << '\n';
+            << " gpu_ms=" << m.metal_stats.gpu_execution_ms
+            << " resident_tiles=" << m.resident_tiles
+            << " fallback_tiles=" << m.fallback_tiles
+            << " cache_hits=" << m.cache_hits
+            << " cache_misses=" << m.cache_misses
+            << " cache_evictions=" << m.cache_evictions
+            << " cache_bytes=" << m.persistent_cache_bytes
+            << " cache_budget=" << m.persistent_cache_budget_bytes << '\n';
 
   for (const auto &[node_id, info] : run.nodes)
     std::cout << std::fixed << std::setprecision(3) << "PHASE4_NODE mode=" << label
               << " id=" << node_id << " update_ms=" << info.update_time
               << " evals=" << info.eval_count << " errors=" << info.error_count << '\n';
+}
+
+void run_phase6_cache_benchmark(const std::string &filename,
+                                GraphConfig         config)
+{
+  ::setenv("HESIOD_METAL_RESIDENT", "1", 1);
+  ::setenv("HESIOD_METAL_PERSISTENT_CACHE", "1", 1);
+  const auto disable_cache = [] { ::unsetenv("HESIOD_METAL_PERSISTENT_CACHE"); };
+
+  GraphManager manager;
+  manager.load_from_file(filename, &config);
+  if (manager.get_graph_order().empty())
+  {
+    disable_cache();
+    return;
+  }
+
+  auto *graph = manager.get_graph_ref_by_id(manager.get_graph_order().front());
+  if (!graph)
+  {
+    disable_cache();
+    return;
+  }
+
+  BaseNode *blend = nullptr;
+  for (const auto &[node_id, node_ptr] : graph->get_nodes())
+    if (auto *node = dynamic_cast<BaseNode *>(node_ptr.get());
+        node && node->get_node_type() == "Blend")
+    {
+      blend = node;
+      break;
+    }
+  if (!blend)
+  {
+    disable_cache();
+    return;
+  }
+
+  const auto cold = MetalGraphExecution::last_metrics();
+  blend->set_value<float>("input1_weight", 0.75f);
+  const auto start = std::chrono::steady_clock::now();
+  graph->update(blend->get_id());
+  const auto end = std::chrono::steady_clock::now();
+  const auto warm = MetalGraphExecution::last_metrics();
+
+  std::cout << std::fixed << std::setprecision(3)
+            << "PHASE6_CACHE graph=" << graph->get_id()
+            << " edit_node=" << blend->get_id()
+            << " warm_wall_ms="
+            << std::chrono::duration<double, std::milli>(end - start).count()
+            << " cold_hits=" << cold.cache_hits
+            << " cold_misses=" << cold.cache_misses
+            << " warm_hits=" << (warm.cache_hits - cold.cache_hits)
+            << " warm_misses=" << (warm.cache_misses - cold.cache_misses)
+            << " warm_evictions=" << warm.cache_evictions
+            << " warm_uploads=" << warm.host_uploads
+            << " warm_readbacks=" << warm.host_readbacks
+            << " cache_bytes=" << warm.persistent_cache_bytes
+            << " cache_budget=" << warm.persistent_cache_budget_bytes << '\n';
+
+  disable_cache();
 }
 
 } // namespace
@@ -398,15 +532,32 @@ void run_phase4_benchmark(const std::string &filename,
 
   if (fallback.has_output && resident.has_output)
   {
+    const double parity_error = max_abs_difference(fallback.output, resident.output);
     std::cout << std::fixed << std::setprecision(8)
               << "PHASE4_PARITY shape=" << benchmark_shape.x << "x" << benchmark_shape.y
-              << " max_abs=" << max_abs_difference(fallback.output, resident.output)
+              << " max_abs=" << parity_error
               << " status="
-              << (max_abs_difference(fallback.output, resident.output) <=
-                          phase4_parity_tolerance
+              << (parity_error <= phase4_parity_tolerance
                       ? "PASS"
                       : "FAIL")
               << '\n';
+
+    if (benchmark_tiling.x > 1 || benchmark_tiling.y > 1)
+      std::cout << std::fixed << std::setprecision(8)
+                << "PHASE6_TILING shape=" << benchmark_shape.x << "x"
+                << benchmark_shape.y << " tiling=" << benchmark_tiling.x << "x"
+                << benchmark_tiling.y << " overlap=" << benchmark_overlap
+                << " seam_max_abs="
+                << max_abs_difference_on_tiling_seams(fallback.output,
+                                                      resident.output,
+                                                      benchmark_tiling)
+                << " off_seam_max_abs="
+                << max_abs_difference_off_tiling_seams(fallback.output,
+                                                       resident.output,
+                                                       benchmark_tiling)
+                << " status="
+                << (parity_error <= phase4_parity_tolerance ? "PASS" : "FAIL")
+                << '\n';
   }
 
   // Exercise dirty-node propagation on the real branch point. The default
@@ -466,6 +617,10 @@ void run_phase4_benchmark(const std::string &filename,
       node.set_value<float>("duration", node.val<float>("duration") * 0.5f);
     });
   }
+
+  if (std::getenv("HESIOD_PHASE6_CACHE_BENCHMARK") &&
+      std::string(std::getenv("HESIOD_PHASE6_CACHE_BENCHMARK")) == "1")
+    run_phase6_cache_benchmark(filename, config);
 
   ::unsetenv("HESIOD_METAL_RESIDENT");
 }
