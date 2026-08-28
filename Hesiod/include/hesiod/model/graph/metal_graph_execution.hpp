@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -37,6 +38,9 @@ struct MetalGraphMetrics
   std::size_t host_readbacks = 0;
   std::size_t host_upload_bytes = 0;
   std::size_t host_readback_bytes = 0;
+  std::uint64_t process_rss_bytes = 0;
+  std::uint64_t process_peak_rss_bytes = 0;
+  std::uint64_t recommended_max_working_set_bytes = 0;
   hmap::gpu::metal::ExecutionStats metal_stats;
   std::vector<MetalGraphNodeExecution> node_executions;
 };
