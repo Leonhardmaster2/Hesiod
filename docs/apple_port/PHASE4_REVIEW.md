@@ -32,4 +32,10 @@ test results and real-graph runs are the authoritative checks for this phase.
 The no-Metal configuration is built and exercised separately before the branch
 is published.
 
+The current HighMap Metal-enabled executable suite ran 349 tests: 348 passed
+and the pre-existing `PathSplines.PreservePathShape` test failed at
+`0.15608564 > 0.15`. The same failure and value reproduce in the pre-Phase-4
+baseline. The current no-Metal executable suite also ran 349 tests with the
+same single baseline failure; Metal-specific tests are skipped there.
+
 Phase 5 has not been started.
