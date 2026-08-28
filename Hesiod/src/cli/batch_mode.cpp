@@ -5,6 +5,8 @@
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
@@ -326,6 +328,29 @@ double max_abs_difference(const hmap::Array &a, const hmap::Array &b)
   return max_abs;
 }
 
+std::optional<std::uint64_t> finite_output_fingerprint(GraphManager       &manager,
+                                                       const GraphConfig &config)
+{
+  const auto output = phase4_output(manager, config);
+  if (!output || output->data.vector.empty())
+    return std::nullopt;
+
+  std::uint64_t fingerprint = 1469598103934665603ull;
+  for (const float value : output->data.vector)
+  {
+    if (!std::isfinite(value))
+      return std::nullopt;
+    std::uint32_t bits = 0;
+    std::memcpy(&bits, &value, sizeof(bits));
+    fingerprint ^= bits;
+    fingerprint *= 1099511628211ull;
+  }
+  fingerprint ^= static_cast<std::uint64_t>(output->data.shape.x);
+  fingerprint *= 1099511628211ull;
+  fingerprint ^= static_cast<std::uint64_t>(output->data.shape.y);
+  return fingerprint;
+}
+
 double max_abs_difference_on_tiling_seams(const hmap::Array &a,
                                           const hmap::Array &b,
                                           const glm::ivec2  &tiling)
@@ -428,6 +453,11 @@ void print_phase4_run(const char *label, const Phase4Run &run)
             << " cache_bytes=" << m.persistent_cache_bytes
             << " cache_budget=" << m.persistent_cache_budget_bytes << '\n';
 
+  for (const auto &node : m.node_executions)
+    std::cout << "PHASE4_NODE_BACKEND mode=" << label << " id=" << node.node_id
+              << " type=" << node.node_type << " backend=" << node.backend
+              << " detail=" << node.detail << '\n';
+
   for (const auto &[node_id, info] : run.nodes)
     std::cout << std::fixed << std::setprecision(3) << "PHASE4_NODE mode=" << label
               << " id=" << node_id << " update_ms=" << info.update_time
@@ -493,6 +523,176 @@ void run_phase6_cache_benchmark(const std::string &filename,
             << " cache_budget=" << warm.persistent_cache_budget_bytes << '\n';
 
   disable_cache();
+}
+
+void run_phase7_cache_soak(const std::string &filename, GraphConfig config)
+{
+  ::setenv("HESIOD_METAL_RESIDENT", "1", 1);
+  ::setenv("HESIOD_METAL_PERSISTENT_CACHE", "1", 1);
+
+  constexpr std::size_t cycles = 100;
+  std::size_t updates = 0;
+  std::size_t project_switches = 0;
+  std::size_t total_hits = 0;
+  std::size_t total_misses = 0;
+  std::size_t total_evictions = 0;
+  std::size_t max_cache_bytes = 0;
+  std::size_t max_cache_budget = 0;
+  std::size_t max_peak_resident_bytes = 0;
+  std::size_t max_peak_rss_bytes = 0;
+  std::size_t output_checks = 0;
+  std::size_t invalid_outputs = 0;
+  std::size_t project_switch_checks = 0;
+  std::size_t project_switch_collisions = 0;
+
+  GraphManager manager;
+  manager.load_from_file(filename, &config);
+  if (!finite_output_fingerprint(manager, config))
+    ++invalid_outputs;
+
+  auto sample_metrics = [&](std::size_t &previous_hits,
+                            std::size_t &previous_misses,
+                            std::size_t &previous_evictions) {
+    const auto &metrics = MetalGraphExecution::last_metrics();
+    total_hits += metrics.cache_hits >= previous_hits
+                      ? metrics.cache_hits - previous_hits
+                      : metrics.cache_hits;
+    total_misses += metrics.cache_misses >= previous_misses
+                        ? metrics.cache_misses - previous_misses
+                        : metrics.cache_misses;
+    total_evictions += metrics.cache_evictions >= previous_evictions
+                           ? metrics.cache_evictions - previous_evictions
+                           : metrics.cache_evictions;
+    previous_hits = metrics.cache_hits;
+    previous_misses = metrics.cache_misses;
+    previous_evictions = metrics.cache_evictions;
+    max_cache_bytes = std::max(max_cache_bytes, metrics.persistent_cache_bytes);
+    max_cache_budget = std::max(max_cache_budget, metrics.persistent_cache_budget_bytes);
+    max_peak_resident_bytes =
+        std::max(max_peak_resident_bytes,
+                 static_cast<std::size_t>(metrics.metal_stats.peak_resident_bytes));
+    max_peak_rss_bytes = std::max(max_peak_rss_bytes,
+                                  static_cast<std::size_t>(metrics.process_peak_rss_bytes));
+  };
+
+  std::size_t previous_hits = 0;
+  std::size_t previous_misses = 0;
+  std::size_t previous_evictions = 0;
+  sample_metrics(previous_hits, previous_misses, previous_evictions);
+
+  for (std::size_t cycle = 0; cycle < cycles; ++cycle)
+  {
+    // Recreate the graph halfway through the run to exercise project/graph
+    // destruction and to ensure a new graph never adopts another graph's key.
+    if (cycle == cycles / 2)
+    {
+      manager.clear();
+      manager.load_from_file("Hesiod/data/examples/MakePeriodic.hsd", &config);
+      ++project_switches;
+      const auto alternate_output = finite_output_fingerprint(manager, config);
+      if (alternate_output)
+        ++output_checks;
+      else
+        ++invalid_outputs;
+      sample_metrics(previous_hits, previous_misses, previous_evictions);
+      manager.clear();
+      manager.load_from_file(filename, &config);
+      ++project_switches;
+      const auto restored_output = finite_output_fingerprint(manager, config);
+      if (restored_output)
+        ++output_checks;
+      else
+        ++invalid_outputs;
+      if (alternate_output && restored_output)
+      {
+        ++project_switch_checks;
+        if (*alternate_output == *restored_output)
+          ++project_switch_collisions;
+      }
+      previous_hits = previous_misses = previous_evictions = 0;
+      sample_metrics(previous_hits, previous_misses, previous_evictions);
+    }
+
+    if (manager.get_graph_order().empty())
+      break;
+    auto *graph = manager.get_graph_ref_by_id(manager.get_graph_order().front());
+    if (!graph)
+      break;
+
+    auto find_node = [&](const char *type) -> BaseNode * {
+      for (const auto &[node_id, node_ptr] : graph->get_nodes())
+        if (auto *node = dynamic_cast<BaseNode *>(node_ptr.get());
+            node && node->get_node_type() == type)
+          return node;
+      return nullptr;
+    };
+
+    BaseNode *edited = nullptr;
+    switch (cycle % 4)
+    {
+    case 0:
+      edited = find_node("CoherentNoise");
+      if (edited) edited->set_value<int>("seed", edited->val<int>("seed") + 1);
+      break;
+    case 1:
+      edited = find_node("SpectralEqualizer");
+      if (edited)
+        edited->set_value<float>("rmax", edited->val<float>("rmax") * 0.99f);
+      break;
+    case 2:
+      edited = find_node("Thermal");
+      if (edited)
+        edited->set_value<float>("duration", edited->val<float>("duration") * 0.99f);
+      break;
+    case 3:
+      edited = find_node("Blend");
+      if (edited)
+        edited->set_value<float>("input1_weight",
+                                 0.60f + 0.01f * static_cast<float>(cycle % 10));
+      break;
+    }
+
+    if (cycle == 24 || cycle == 49 || cycle == 74)
+    {
+      GraphConfig changed = *graph->get_config_ref();
+      changed.set_shape(cycle == 49 ? glm::ivec2(1024, 1024)
+                                    : glm::ivec2(512, 512));
+      changed.set_tiling(cycle == 49 ? glm::ivec2(2, 2) : glm::ivec2(1, 1));
+      changed.set_overlap(cycle == 49 ? 0.25f : 0.f);
+      graph->change_config_values(changed);
+    }
+    else if (edited)
+      graph->update(edited->get_id());
+    else
+      graph->update();
+
+    ++updates;
+    if (finite_output_fingerprint(manager, *graph->get_config_ref()))
+      ++output_checks;
+    else
+      ++invalid_outputs;
+    sample_metrics(previous_hits, previous_misses, previous_evictions);
+  }
+
+  const auto &final_metrics = MetalGraphExecution::last_metrics();
+  std::cout << std::fixed << std::setprecision(3)
+            << "PHASE7_CACHE_SOAK cycles=" << cycles << " updates=" << updates
+            << " project_switches=" << project_switches
+            << " hits=" << total_hits << " misses=" << total_misses
+            << " evictions=" << total_evictions
+            << " max_cache_bytes=" << max_cache_bytes
+            << " cache_budget=" << max_cache_budget
+            << " max_peak_resident_bytes=" << max_peak_resident_bytes
+            << " max_peak_rss_bytes=" << max_peak_rss_bytes
+            << " output_checks=" << output_checks
+            << " invalid_outputs=" << invalid_outputs
+            << " project_switch_checks=" << project_switch_checks
+            << " project_switch_collisions=" << project_switch_collisions
+            << " final_cache_bytes=" << final_metrics.persistent_cache_bytes
+            << " final_resident_bytes=" << final_metrics.metal_stats.resident_bytes
+            << '\n';
+
+  ::unsetenv("HESIOD_METAL_PERSISTENT_CACHE");
 }
 
 } // namespace
@@ -621,6 +821,10 @@ void run_phase4_benchmark(const std::string &filename,
   if (std::getenv("HESIOD_PHASE6_CACHE_BENCHMARK") &&
       std::string(std::getenv("HESIOD_PHASE6_CACHE_BENCHMARK")) == "1")
     run_phase6_cache_benchmark(filename, config);
+
+  if (std::getenv("HESIOD_PHASE7_CACHE_SOAK") &&
+      std::string(std::getenv("HESIOD_PHASE7_CACHE_SOAK")) == "1")
+    run_phase7_cache_soak(filename, config);
 
   ::unsetenv("HESIOD_METAL_RESIDENT");
 }

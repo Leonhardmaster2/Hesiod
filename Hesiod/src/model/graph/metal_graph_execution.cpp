@@ -244,7 +244,7 @@ bool MetalGraphExecution::resident_candidate(const std::string &node_type)
 {
   return node_type == "CoherentNoise" || node_type == "SpectralEqualizer" ||
          node_type == "Thermal" || node_type == "Blend" ||
-         node_type == "GaborWaveFbm";
+         node_type == "GaborWaveFbm" || node_type == "MorphologicalGradient";
 }
 
 void MetalGraphExecution::prepare_node(BaseNode &node)
@@ -266,7 +266,8 @@ void MetalGraphExecution::prepare_node(BaseNode &node)
     this->prepare_host_node(node);
 }
 
-void MetalGraphExecution::prepare_host_node(BaseNode &node)
+void MetalGraphExecution::prepare_host_node(BaseNode       &node,
+                                            const std::string &detail)
 {
   if (!this->enabled_)
     return;
@@ -281,7 +282,7 @@ void MetalGraphExecution::prepare_host_node(BaseNode &node)
       this->materialize(array);
   }
 
-  this->record_host(node, "host boundary");
+  this->record_host(node, detail);
 }
 
 hmap::gpu::metal::DeviceArray MetalGraphExecution::device_for(
@@ -353,6 +354,7 @@ void MetalGraphExecution::materialize(const hmap::VirtualArray *array)
   mutable_array->from_array(host, single_array_mode);
   this->host_readbacks_++;
   this->host_readback_bytes_ += host.vector.size() * sizeof(float);
+  this->session_finished_ = true;
   this->device_arrays_.erase(it);
   this->host_required_.erase(array);
   this->device_modified_.erase(array);
@@ -412,6 +414,7 @@ void MetalGraphExecution::flush()
     this->materialize(array);
 
   this->session_->finish();
+  this->session_finished_ = true;
 
   // Only completed resources enter the persistent cache. The cache API keeps
   // ownership at the DeviceArray layer, so Hesiod never handles an MTLBuffer.

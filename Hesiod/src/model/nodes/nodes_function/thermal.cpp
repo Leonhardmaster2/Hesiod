@@ -95,7 +95,7 @@ bool try_resident_thermal(BaseNode                   &node,
                           bool                      scale_talus)
 {
   auto *execution = MetalGraphExecution::current();
-  if (!execution || !execution->enabled() || !p_in || !p_out)
+  if (!execution || !execution->can_encode() || !p_in || !p_out)
     return false;
 
   // The resident API intentionally covers only the unmasked Standard/Linear

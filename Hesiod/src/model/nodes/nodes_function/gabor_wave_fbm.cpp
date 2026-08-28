@@ -97,7 +97,7 @@ bool try_resident_gabor_wave_fbm(BaseNode            &node,
                                  hmap::VirtualArray *p_out)
 {
   auto *execution = MetalGraphExecution::current();
-  if (!execution || !execution->enabled() || !p_out || p_env ||
+  if (!execution || !execution->can_encode() || !p_out || p_env ||
       !resident_gabor_post_process_is_identity(node))
     return false;
 

@@ -124,6 +124,10 @@ public:
   static const MetalGraphMetrics &last_metrics();
 
   bool enabled() const noexcept { return this->enabled_; }
+  bool can_encode() const noexcept
+  {
+    return this->enabled_ && this->session_ && !this->session_finished_;
+  }
 
   /**
    * @brief Prepare a node before its ordinary compute function runs.
@@ -133,7 +137,8 @@ public:
    * value, preserving the existing CPU/OpenCL implementation unchanged.
    */
   void prepare_node(BaseNode &node);
-  void prepare_host_node(BaseNode &node);
+  void prepare_host_node(BaseNode       &node,
+                         const std::string &detail = "host boundary");
 
   hmap::gpu::metal::DeviceArray device_for(const hmap::VirtualArray *array);
   void bind(const hmap::VirtualArray                 *array,
@@ -164,6 +169,7 @@ private:
   std::string graph_id_;
   bool        enabled_ = false;
   bool        flushed_ = false;
+  bool        session_finished_ = false;
 
   std::unique_ptr<hmap::gpu::metal::DeviceSession> session_;
   std::unordered_map<const hmap::VirtualArray *, hmap::gpu::metal::DeviceArray>
