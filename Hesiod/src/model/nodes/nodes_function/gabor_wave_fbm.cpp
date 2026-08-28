@@ -2,11 +2,15 @@
  * Public License. The full license is in the file LICENSE, distributed with
  * this software. */
 #include "highmap/opencl/gpu_opencl.hpp"
+#include "highmap/gpu/metal.hpp"
 #include "highmap/primitives.hpp"
+
+#include "meta/metadata/keys.hpp"
 
 #include "hesiod/model/nodes/attributes.hpp"
 
 #include "hesiod/logger.hpp"
+#include "hesiod/model/graph/metal_graph_execution.hpp"
 #include "hesiod/model/nodes/base_node.hpp"
 #include "hesiod/model/nodes/post_process.hpp"
 
@@ -72,6 +76,76 @@ void setup_gabor_wave_fbm_node(BaseNode &node)
 // Compute
 // -----------------------------------------------------------------------------
 
+namespace
+{
+
+bool resident_gabor_post_process_is_identity(const BaseNode &node)
+{
+  return !node.val<bool>("post_inverse") &&
+         node.val<float>("post_gamma") == 1.f &&
+         node.val<float>("post_gain") == 1.f &&
+         node.val<float>("post_smoothing_radius") == 0.f &&
+         !node.state_val<bool>("post_saturate", meta::keys::state::active);
+}
+
+bool try_resident_gabor_wave_fbm(BaseNode            &node,
+                                 hmap::VirtualArray *p_dx,
+                                 hmap::VirtualArray *p_dy,
+                                 hmap::VirtualArray *p_ctrl,
+                                 hmap::VirtualArray *p_env,
+                                 hmap::VirtualArray *p_angle,
+                                 hmap::VirtualArray *p_out)
+{
+  auto *execution = MetalGraphExecution::current();
+  if (!execution || !execution->enabled() || !p_out || p_env ||
+      !resident_gabor_post_process_is_identity(node))
+    return false;
+
+  auto dx = p_dx ? execution->device_for(p_dx)
+                 : hmap::gpu::metal::DeviceArray{};
+  auto dy = p_dy ? execution->device_for(p_dy)
+                 : hmap::gpu::metal::DeviceArray{};
+  auto ctrl = p_ctrl ? execution->device_for(p_ctrl)
+                     : hmap::gpu::metal::DeviceArray{};
+  auto angle = p_angle ? execution->device_for(p_angle)
+                       : hmap::gpu::metal::DeviceArray{};
+
+  const auto *p_dx_device = p_dx ? &dx : nullptr;
+  const auto *p_dy_device = p_dy ? &dy : nullptr;
+  const auto *p_ctrl_device = p_ctrl ? &ctrl : nullptr;
+  const auto *p_angle_device = p_angle ? &angle : nullptr;
+
+  auto result = execution->session().gabor_wave_fbm(
+      p_out->shape,
+      node.val<glm::vec2>(A_KW),
+      static_cast<std::uint32_t>(node.val<int>(A_SEED)),
+      node.val<float>(A_ANGLE),
+      node.val<float>(A_ANGLE_SPREAD_RATIO),
+      node.val<int>(A_OCTAVES),
+      node.val<float>(A_WEIGHT),
+      node.val<float>(A_PERSISTENCE),
+      node.val<float>(A_LACUNARITY),
+      p_ctrl_device,
+      p_dx_device,
+      p_dy_device,
+      p_angle_device,
+      p_out->bbox);
+
+  if (node.state_val<bool>("post_remap", meta::keys::state::active))
+  {
+    const glm::vec2 range = node.val<glm::vec2>("post_remap");
+    result = execution->session().normalize(std::move(result), range.x, range.y);
+  }
+
+  execution->bind(p_out,
+                  std::move(result),
+                  !node.is_port_connected(P_OUTPUT));
+  execution->record_resident(node, "gabor_wave_fbm");
+  return true;
+}
+
+} // namespace
+
 void compute_gabor_wave_fbm_node(BaseNode &node)
 {
   Logger::log()->trace("computing node [{}]/[{}]", node.get_label(), node.get_id());
@@ -82,6 +156,18 @@ void compute_gabor_wave_fbm_node(BaseNode &node)
   auto *p_env   = node.get_value_ref<hmap::VirtualArray>(P_ENVELOPE);
   auto *p_out   = node.get_value_ref<hmap::VirtualArray>(P_OUTPUT);
   auto *p_angle = node.get_value_ref<hmap::VirtualArray>(P_ANGLE);
+
+  if (try_resident_gabor_wave_fbm(node,
+                                  p_dx,
+                                  p_dy,
+                                  p_ctrl,
+                                  p_env,
+                                  p_angle,
+                                  p_out))
+    return;
+
+  if (auto *execution = MetalGraphExecution::current())
+    execution->prepare_host_node(node);
 
   hmap::for_each_tile(
       {p_ctrl, p_dx, p_dy, p_angle},
