@@ -96,9 +96,16 @@ bool try_resident_spectral_equalizer(BaseNode                  &node,
 {
   auto *execution = MetalGraphExecution::current();
   if (!execution || !execution->can_encode() || !p_in || !p_out || p_mask ||
-      node.is_port_connected(P_MASK) ||
-      p_out->get_max_tiles() != glm::ivec2(1, 1) ||
-      !spectral_post_process_is_identity(node, p_in))
+      node.is_port_connected(P_MASK))
+    return false;
+  if (p_in->get_max_tiles() != glm::ivec2(1, 1) ||
+      p_out->get_max_tiles() != glm::ivec2(1, 1))
+  {
+    if (execution)
+      execution->prepare_host_node(node, "SpectralEqualizer: multi-tile halo fallback");
+    return false;
+  }
+  if (!spectral_post_process_is_identity(node, p_in))
     return false;
 
   auto input = execution->device_for(p_in);
@@ -147,6 +154,9 @@ void compute_spectral_equalizer_node(BaseNode &node)
                                       ir_min,
                                       ir_max))
     return;
+
+  if (auto *execution = MetalGraphExecution::current())
+    execution->prepare_host_node(node);
 
   // --- Prepare mask
 

@@ -368,20 +368,23 @@ void compute_coherent_noise_node(BaseNode &node)
                                        ? hmap::NoiseType(node.val<int>(A_NOISE_TYPE))
                                        : hmap::NoiseType::SIMPLEX2;
   if (try_resident_coherent_noise(node,
-                                  p_dx,
-                                  p_dy,
-                                  p_ctrl,
-                                  p_env,
-                                  p_out,
-                                  current_group,
-                                  resident_noise_type,
-                                  kw,
-                                  static_cast<std::uint32_t>(seed),
-                                  octaves,
-                                  weight,
-                                  persistence,
-                                  lacunarity))
+                                   p_dx,
+                                   p_dy,
+                                   p_ctrl,
+                                   p_env,
+                                   p_out,
+                                   current_group,
+                                   resident_noise_type,
+                                   kw,
+                                   static_cast<std::uint32_t>(seed),
+                                   octaves,
+                                   weight,
+                                   persistence,
+                                   lacunarity))
     return;
+
+  if (auto *execution = MetalGraphExecution::current())
+    execution->prepare_host_node(node);
 
   // --- Compute
 
