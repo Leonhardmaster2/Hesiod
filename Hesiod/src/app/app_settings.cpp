@@ -12,6 +12,11 @@
 
 #include "highmap/opencl/gpu_opencl.hpp"
 
+#if HIGHMAP_HAS_OPENCL
+#include "cl_wrapper/device_manager.hpp"
+#include "cl_wrapper/kernel_manager.hpp"
+#endif
+
 #include "hesiod/app/app_settings.hpp"
 #include "hesiod/logger.hpp"
 #include "hesiod/model/utils.hpp"
@@ -147,6 +152,7 @@ void AppSettings::json_from(nlohmann::json const &json)
                 interface.enable_example_selector_at_startup);
 
   // OpenCL device
+#if HIGHMAP_HAS_OPENCL
   {
     json_safe_get(json, "node_editor.gpu_device_name", node_editor.gpu_device_name);
 
@@ -169,6 +175,7 @@ void AppSettings::json_from(nlohmann::json const &json)
       }
     }
   }
+#endif
 
   json_safe_get(json, "node_editor.default_resolution", node_editor.default_resolution);
   json_safe_get(json, "node_editor.default_tiling", node_editor.default_tiling);
