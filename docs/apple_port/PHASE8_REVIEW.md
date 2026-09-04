@@ -1,9 +1,10 @@
 # Phase 8 Review: Real-Graph GPU Residency and Hybrid Execution
 
-Date: 2026-09-01
-Hesiod feature branch: `feature/apple-metal-integration` at `b9082729` + Phase 8 commits
-HighMap feature branch: `feature/apple-metal-backend` at `a0c416dc` + Phase 8 tests
-HighMap pinned in Hesiod: `a0c416dc` (unchanged; Phase 8 adds tests only to HighMap)
+Date: 2026-09-04 (post-sync review refresh)
+Hesiod feature branch: `feature/apple-metal-integration` at `ac11110a` before this documentation refresh
+HighMap feature branch: `feature/apple-metal-backend` at `d335ec05`
+HighMap pinned in Hesiod: `d335ec05`
+Hesiod upstream base: `b44dfe82`; HighMap upstream base: `aa57b8e7`
 
 ## Decision
 
@@ -12,6 +13,32 @@ was added; the real graph `SpectralEqualizer.hsd` was already fully resident
 with correct hybrid boundaries. Phase 8 tightens those boundaries, extends
 measurement, and adds focused tests and benchmarks while preserving CPU/OpenCL
 and Metal-disabled fallbacks.
+
+## Post-sync requalification
+
+On 2026-09-04 both feature branches were fetched against their actual upstream
+`dev` heads and rebased onto those bases. The feature-only ranges are linear;
+the earlier upstream-integration merge commit is not present. The Hesiod
+HighMap submodule now points at the published personal HighMap revision
+`d335ec05`.
+
+The rebased Hesiod Metal and no-Metal executables both build successfully. A
+fresh `SpectralEqualizer.hsd` sweep on the Apple M3 passed parity at all four
+sizes:
+
+| Shape | Resident wall | Resident nodes | Uploads | Readbacks | Peak resident | Parity max abs |
+|---:|---:|---:|---:|---:|---:|---:|
+| 512² | 19.727 ms | 4 | 0 | 1 | 16.8 MB | 0.00901616 PASS |
+| 1024² | 99.458 ms | 4 | 0 | 1 | 67.1 MB | 0.00459123 PASS |
+| 2048² | 747.170 ms | 4 | 0 | 1 | 268.4 MB | 0.00232887 PASS |
+| 4096² | 13,058.750 ms | 4 | 0 | 1 | 1.07 GB | 0.00117421 PASS |
+
+The no-Metal 1024² reference also passes parity (`0.00065053`) and reports no
+resident nodes or transfers. The explicit OpenCL include/feature guard in
+`app_settings.cpp` keeps optional OpenCL headers out of the Metal-disabled
+build boundary. These are post-sync qualification values; the historical
+Phase 8 measurements below remain useful for comparison and retain their
+original run conditions.
 
 ## Architecture Implemented
 

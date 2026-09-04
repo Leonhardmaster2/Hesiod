@@ -1,7 +1,16 @@
 # Hesiod Phase 5 Review
 
-Date: 2026-08-28. HighMap feature revision: `702a3acb1`. The Hesiod feature
-revision is the final branch HEAD reported by the audit below.
+Date: 2026-08-28 historical measurements; review refreshed 2026-09-04.
+HighMap feature revision at the current published baseline:
+`d335ec051f7c7d5cb241e80baa5e4139cf4361de`. The Hesiod feature branch was
+rebased onto upstream `dev` at `b44dfe8203ab827c9f76b84dacd18a4f25922d19`;
+the pre-refresh implementation baseline was `ac11110a`.
+
+The historical measurements and conclusions below are retained. A fresh
+post-sync 512²/1024²/2048²/4096² qualification reproduced resident execution
+with four resident nodes, zero uploads, one terminal readback, and parity PASS
+at every size; see `APPLE_METAL_CURRENT_STATE.md` and `PHASE8_REVIEW.md` for
+the exact current values.
 
 ## Decision gate
 
