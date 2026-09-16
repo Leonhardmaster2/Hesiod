@@ -941,7 +941,14 @@ void render_reference_images()
 
 int main(int argc, char *argv[])
 {
+  // Startup resolves the portable config before Qt has an application object.
+  // Check that path too: applicationDirPath() is not available at that point.
+  const std::string startup_executable_dir = ui_scale::executable_dir(nullptr);
   QApplication app(argc, argv);
+
+  check(!startup_executable_dir.empty() &&
+            startup_executable_dir == ui_scale::executable_dir(nullptr),
+        "the executable directory resolves consistently before QApplication");
 
   // the sidebar's activation signals carry std::string, like the library tree's
   qRegisterMetaType<std::string>("std::string");

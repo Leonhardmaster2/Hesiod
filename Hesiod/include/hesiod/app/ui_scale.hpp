@@ -47,7 +47,8 @@ double sanitize(double value, bool *out_was_clean = nullptr);
 
 /** @brief Directory holding the running executable, before QApplication exists.
  *
- * On Windows this asks the loader (GetModuleFileNameW) rather than trusting
+ * On Linux this reads /proc/self/exe; on Windows it asks the loader
+ * (GetModuleFileNameW), rather than trusting
  * argv[0]: a process started through PATH, a shortcut or CreateProcess can be
  * handed a bare name or a relative path, which would resolve the portable
  * config against whatever directory the launcher happened to be in. @p argv0 is

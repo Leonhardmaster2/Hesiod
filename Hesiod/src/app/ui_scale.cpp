@@ -51,6 +51,14 @@ std::string executable_dir(const char *argv0)
 {
   std::error_code ec;
 
+#ifdef Q_OS_LINUX
+  // Resolve the running image before QApplication exists, including launches
+  // through PATH or a symlink. argv[0] need not name the executable on disk.
+  const fs::path exe = fs::read_symlink("/proc/self/exe", ec);
+  if (!ec && exe.has_parent_path())
+    return exe.parent_path().string();
+#endif
+
 #ifdef Q_OS_WIN
   // argv[0] is whatever the launcher passed: a bare "hesiod.exe" found on PATH,
   // or a path relative to a working directory that is not the install. Ask the
