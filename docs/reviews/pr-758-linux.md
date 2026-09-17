@@ -98,6 +98,45 @@ Qt references:
 - https://doc.qt.io/qt-6/qscreen.html#devicePixelRatio-prop
 - https://doc.qt.io/qt-6/highdpi.html
 
+## Popup menu hover trails (2026-09-17 follow-up)
+
+After the graph fix, a screenshot and follow-up confirm that hovering between
+node-creation menu categories leaves horizontal lines and broken border segments
+at application 90% / niri output 150%. The graph viewport workaround does not
+cover QMenu popup windows.
+
+A standalone Qt menu with the same style characteristics reproduces the lines:
+1,604 pixels differ between the settled hovered menu and a forced full redraw at
+150% / 90%. At 150% / 100% the comparison matches. This does not require the
+Hesiod graph renderer or its OpenGL sibling.
+
+`MenuRepaintFilter` is installed once on the GUI application and covers menus
+and submenus created later, including the graph library's plain QMenu objects.
+On a pending UpdateRequest, it expands a menu's dirty region to the full popup
+if that menu's current DPR is fractional. Qt then handles the request normally.
+It neither intercepts Paint nor schedules recurring redraws; integer-DPR menus
+and non-menu widgets retain their existing update behavior. The tradeoff is a
+full popup repaint when a menu item or child widget changes.
+
+Validation:
+
+- The standalone menu comparison has zero changed pixels at output/app scales
+  150% / 90%, 150% / 100%, and 100% / 90% with the workaround.
+- A diagnostic linked against the updated production application opens the
+  real node-creation menu and changes its active category 60 times. Full
+  compositor screenshots before/after forcing another redraw match exactly
+  at all three scale pairs, including the visible submenu.
+- The palette suite now checks that hover and small-region updates produce a
+  full popup paint at fractional DPR and that a settled popup remains idle.
+  The complete suite passes in eight isolated X11 processes at scale factors
+  0.5, 0.9, 1, 1.25, 1.35, 1.5, 2, and 3. The application rebuild also passes.
+
+Local captures are `menu-*` and `app-menu-*` under
+`/tmp/hesiod-758-combined-scale`; palette logs are in `palette-*` there.
+The previously documented node clipping at output 100% / application 90% is
+outside this menu fix and remains unresolved. No private Qt environment setting
+is enabled by the production workaround.
+
 ## Confirmed startup config bug
 
 `ui_scale::executable_dir()` used the running executable's location on Windows,

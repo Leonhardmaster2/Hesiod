@@ -14,6 +14,7 @@
 #include <QDir>
 #include <QEnterEvent>
 #include <QPainter>
+#include <QPaintEvent>
 #include <QScreen>
 #include <QScrollArea>
 #include <QScrollBar>
@@ -29,6 +30,7 @@
 #include <QPushButton>
 
 #include "hesiod/app/ui_scale.hpp"
+#include "hesiod/gui/widgets/menu_repaint_filter.hpp"
 #include "hesiod/gui/widgets/node_palette_sidebar.hpp"
 #include "hesiod/gui/widgets/scrollable_dialog.hpp"
 
@@ -939,6 +941,63 @@ void render_reference_images()
   }
 }
 
+void test_menu_repainting()
+{
+  section("menus: fractional-scale redraws");
+
+  class ObservedMenu : public QMenu
+  {
+  public:
+    int paints = 0;
+    QRegion painted;
+
+  protected:
+    void paintEvent(QPaintEvent *event) override
+    {
+      ++paints;
+      painted = event->region();
+      QMenu::paintEvent(event);
+    }
+  };
+
+  MenuRepaintFilter filter;
+  qApp->installEventFilter(&filter);
+  QWidget owner;
+  owner.resize(300, 300);
+  owner.show();
+  QTest::qWait(80);
+
+  ObservedMenu menu;
+  menu.addAction("First");
+  QAction *second = menu.addAction("Second");
+  menu.addAction("Third");
+  menu.popup(owner.mapToGlobal(QPoint(20, 20)));
+  QTest::qWait(100);
+
+  menu.paints = 0;
+  menu.setActiveAction(second);
+  QTest::qWait(80);
+  check(menu.paints > 0, "changing the highlighted menu item repaints");
+  const qreal dpr = menu.devicePixelRatioF();
+  if (!qFuzzyCompare(dpr, std::round(dpr)))
+    check(menu.painted.contains(menu.rect()),
+          "a hover update covers the whole popup at fractional DPR");
+
+  menu.paints = 0;
+  menu.update(QRect(10, 10, 5, 5));
+  QTest::qWait(80);
+  check(menu.paints > 0, "a small dirty region repaints");
+  if (!qFuzzyCompare(dpr, std::round(dpr)))
+    check(menu.painted.contains(menu.rect()),
+          "a small dirty region expands to the whole popup at fractional DPR");
+
+  const int settled_paints = menu.paints;
+  QTest::qWait(160);
+  check(menu.paints == settled_paints, "the popup does not repaint while idle");
+  menu.close();
+  qApp->removeEventFilter(&filter);
+}
+
 int main(int argc, char *argv[])
 {
   // Startup resolves the portable config before Qt has an application object.
@@ -960,6 +1019,7 @@ int main(int argc, char *argv[])
   test_executable_path();
 
   test_settings_dialog();
+  test_menu_repainting();
 
   test_category_completeness();
   test_node_creation_signal();
