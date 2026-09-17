@@ -47,6 +47,11 @@ GraphNodeWidget::GraphNodeWidget(std::weak_ptr<GraphNode> p_graph_node, QWidget 
   this->set_id(gno->get_id());
   this->setAttribute(Qt::WA_DeleteOnClose);
 
+  // Partial scene updates can leave stale node outlines at fractional device
+  // pixel ratios (e.g. Wayland output 150% with application scale 90%). Redraw
+  // the viewport on scene changes, including after moving between displays.
+  this->setViewportUpdateMode(QGraphicsView::FullViewportUpdate);
+
   // populate node catalog
   this->set_node_inventory(get_node_inventory());
   this->setup_connections();
