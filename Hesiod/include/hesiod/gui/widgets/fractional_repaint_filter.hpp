@@ -5,13 +5,13 @@
 #include <cmath>
 
 #include <QEvent>
-#include <QMenu>
 #include <QObject>
+#include <QWidget>
 
 namespace hesiod
 {
 
-class MenuRepaintFilter : public QObject
+class FractionalRepaintFilter : public QObject
 {
 public:
   using QObject::QObject;
@@ -20,14 +20,15 @@ protected:
   bool eventFilter(QObject *object, QEvent *event) override
   {
     if (event->type() == QEvent::UpdateRequest)
-      if (auto *menu = qobject_cast<QMenu *>(object))
+      if (auto *widget = qobject_cast<QWidget *>(object); widget && widget->isWindow())
       {
-        const qreal dpr = menu->devicePixelRatioF();
+        const qreal dpr = widget->devicePixelRatioF();
         if (!qFuzzyCompare(dpr, std::round(dpr)))
-          // Fractional scaling can leave lines between previously hovered
-          // items. Expand the dirty region before Qt syncs the backing store.
+          // Partial backing-store updates can leave stale pixels or clip child
+          // widgets at fractional scaling. Expand the window's dirty region
+          // before Qt syncs it, including menus and other popup windows.
           // Doing this during Paint would be too late and risk a repaint loop.
-          menu->update();
+          widget->update();
       }
 
     return false;

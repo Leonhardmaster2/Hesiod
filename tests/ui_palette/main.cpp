@@ -30,7 +30,7 @@
 #include <QPushButton>
 
 #include "hesiod/app/ui_scale.hpp"
-#include "hesiod/gui/widgets/menu_repaint_filter.hpp"
+#include "hesiod/gui/widgets/fractional_repaint_filter.hpp"
 #include "hesiod/gui/widgets/node_palette_sidebar.hpp"
 #include "hesiod/gui/widgets/scrollable_dialog.hpp"
 
@@ -941,6 +941,74 @@ void render_reference_images()
   }
 }
 
+void test_child_widget_repainting()
+{
+  section("windows: fractional-scale child redraws");
+
+  class ObservedWidget : public QWidget
+  {
+  public:
+    using QWidget::QWidget;
+    int paints = 0;
+    QRegion painted;
+
+  protected:
+    void paintEvent(QPaintEvent *event) override
+    {
+      ++paints;
+      painted = event->region();
+      QPainter painter(this);
+      painter.fillRect(rect(), Qt::darkGray);
+    }
+  };
+
+  FractionalRepaintFilter filter;
+  ObservedWidget window;
+  window.resize(300, 300);
+  ObservedWidget child(&window);
+  child.setAttribute(Qt::WA_OpaquePaintEvent);
+  child.setGeometry(30, 140, 180, 100);
+  window.show();
+  QTest::qWait(100);
+
+  window.paints = 0;
+  child.update(QRect(10, 20, 5, 5));
+  QTest::qWait(80);
+  const QRegion unfiltered_region = child.painted;
+  const int unfiltered_window_paints = window.paints;
+  check(!QRegion(child.rect()).subtracted(unfiltered_region).isEmpty(),
+        "the unfiltered child update exercises a partial paint");
+
+  qApp->installEventFilter(&filter);
+  window.paints = 0;
+  window.painted = QRegion();
+  child.paints = 0;
+  child.update(QRect(10, 20, 5, 5));
+  QTest::qWait(80);
+  check(child.paints > 0, "a child update reaches the window backing store");
+  const qreal dpr = window.devicePixelRatioF();
+  if (!qFuzzyCompare(dpr, std::round(dpr)))
+    // Qt may retain the opaque child's unchanged pixels. The window background
+    // must nevertheless join the update, expanding the backing-store damage.
+    check(window.paints > 0 &&
+              QRegion(window.rect())
+                  .subtracted(QRegion(child.geometry()))
+                  .subtracted(window.painted)
+                  .isEmpty(),
+          "a small child update also repaints the window at fractional DPR");
+  else
+    check(child.painted == unfiltered_region &&
+              window.paints == unfiltered_window_paints,
+          "integer-DPR windows retain partial child updates");
+
+  const int settled_paints = child.paints;
+  const int settled_window_paints = window.paints;
+  QTest::qWait(160);
+  check(child.paints == settled_paints && window.paints == settled_window_paints,
+        "the window does not repaint while idle");
+  qApp->removeEventFilter(&filter);
+}
+
 void test_menu_repainting()
 {
   section("menus: fractional-scale redraws");
@@ -960,7 +1028,7 @@ void test_menu_repainting()
     }
   };
 
-  MenuRepaintFilter filter;
+  FractionalRepaintFilter filter;
   qApp->installEventFilter(&filter);
   QWidget owner;
   owner.resize(300, 300);
@@ -980,7 +1048,7 @@ void test_menu_repainting()
   check(menu.paints > 0, "changing the highlighted menu item repaints");
   const qreal dpr = menu.devicePixelRatioF();
   if (!qFuzzyCompare(dpr, std::round(dpr)))
-    check(menu.painted.contains(menu.rect()),
+    check(QRegion(menu.rect()).subtracted(menu.painted).isEmpty(),
           "a hover update covers the whole popup at fractional DPR");
 
   menu.paints = 0;
@@ -988,7 +1056,7 @@ void test_menu_repainting()
   QTest::qWait(80);
   check(menu.paints > 0, "a small dirty region repaints");
   if (!qFuzzyCompare(dpr, std::round(dpr)))
-    check(menu.painted.contains(menu.rect()),
+    check(QRegion(menu.rect()).subtracted(menu.painted).isEmpty(),
           "a small dirty region expands to the whole popup at fractional DPR");
 
   const int settled_paints = menu.paints;
@@ -1019,6 +1087,7 @@ int main(int argc, char *argv[])
   test_executable_path();
 
   test_settings_dialog();
+  test_child_widget_repainting();
   test_menu_repainting();
 
   test_category_completeness();

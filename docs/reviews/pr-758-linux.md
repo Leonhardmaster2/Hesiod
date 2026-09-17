@@ -8,7 +8,64 @@ software OpenGL. Separate spot checks used XWayland and native Wayland on
 the local desktop. This does not cover Otto's particular Qt version, GPU,
 desktop, or mixed-monitor setup.
 
-## Fractional Wayland redraw fix (2026-09-17)
+## Current workaround: fractional window redraws
+
+The graph-only and popup-only fixes below did not cover the docked node library.
+A further user recording at output 100% / application 90% shows retained hover
+strips in that tree. The actual application reproduces this: moving over 80
+positions in the tree leaves 11,151 pixels that change after a forced redraw.
+At 150% / 90% it leaves 634 stale pixels; at 150% / 100% the baseline is clean.
+
+The application now installs `FractionalRepaintFilter` in place of the
+menu-only filter. On a pending QWidget window UpdateRequest, it checks that
+window's current DPR and expands the dirty region to the full window when the
+DPR is fractional. This covers child widgets, graphs, dialogs and popups through
+their backing store. The explicit FullViewportUpdate setting in GraphNodeWidget
+is removed: the common workaround handles that case too. Integer-DPR windows
+keep Qt's normal partial updates, and idle windows do not acquire a redraw loop.
+No scale is clamped and no undocumented Qt environment variable is enabled.
+
+The tradeoff is more painting per update for fractional-DPR windows. This is a
+correctness workaround; large graphs and continuously animated 3D scenes have
+not been performance-benchmarked. The DPR is read per update, rather than cached
+at startup, but actual mixed-monitor transitions remain untested.
+
+### Current validation
+
+The full application rebuilt with Qt 6.11.2. Replacement diagnostic mains link
+the updated production objects without adding a second redraw workaround.
+The graph diagnostic confirms the original MinimalViewportUpdate mode is active.
+All 15 compositor screenshot comparisons have zero changed pixels above the
+status bar:
+
+| Output / application | Node-list hover | Node movement | Pan | Zoom | Popup hover |
+| --- | --- | --- | --- | --- | --- |
+| 100% / 90% | Pass | Pass | Pass | Pass | Pass |
+| 150% / 90% | Pass | Pass | Pass | Pass | Pass |
+| 150% / 100% | Pass | Pass | Pass | Pass | Pass |
+
+This includes the previously failing clipped-node case at 100% / 90%. Those
+older failures below describe the earlier implementations, not the current one.
+The comparisons use the same settled-versus-forced-redraw method, with the top
+760 rows of 1280x800 compositor captures excluding the changing status bar.
+
+The palette suite now also compares child-widget paint regions with an
+unfiltered baseline, checks integer-DPR behavior, and checks idle behavior for
+both ordinary windows and menus. Coverage assertions use region subtraction:
+QRegion::contains(QRect) only tests overlap and was too weak in the earlier menu
+checks. The corrected tests exercise complete coverage of the menu/window background;
+Qt may retain an opaque child's unchanged pixels, so the window test explicitly
+allows that optimization. The complete suite passes at scale factors 0.5, 0.9,
+1, 1.25, 1.35, 1.5, 2, and 3 on the isolated X11 display.
+
+Local tools and captures are in `/tmp/hesiod-758-combined-scale`:
+`run-window-fixed-nested.py` runs the 15 visual cases (`window-fixed-*`), while
+`run-window-tests.py` runs the palette suite (`window-palette-*`).
+`build-probes.py` builds the tree, graph and menu diagnostics against the
+production application objects. The earlier baseline captures remain in
+`app-tree-*` and `fixed-*`.
+
+## Initial graph-only fractional redraw fix (2026-09-17)
 
 A recording on NixOS/niri provides a repeatable case: start Hesiod at 100%,
 set output scaling to 150%, then save application scaling at 90% and restart.
@@ -98,7 +155,7 @@ Qt references:
 - https://doc.qt.io/qt-6/qscreen.html#devicePixelRatio-prop
 - https://doc.qt.io/qt-6/highdpi.html
 
-## Popup menu hover trails (2026-09-17 follow-up)
+## Initial popup-only hover fix (2026-09-17 follow-up)
 
 After the graph fix, a screenshot and follow-up confirm that hovering between
 node-creation menu categories leaves horizontal lines and broken border segments
@@ -133,8 +190,9 @@ Validation:
 
 Local captures are `menu-*` and `app-menu-*` under
 `/tmp/hesiod-758-combined-scale`; palette logs are in `palette-*` there.
-The previously documented node clipping at output 100% / application 90% is
-outside this menu fix and remains unresolved. No private Qt environment setting
+At this stage the node clipping at output 100% / application 90% was
+outside the menu-only fix and remained unresolved; see the current workaround
+above for the subsequent passing result. No private Qt environment setting
 is enabled by the production workaround.
 
 ## Confirmed startup config bug

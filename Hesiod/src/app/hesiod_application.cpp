@@ -34,7 +34,7 @@
 #include "hesiod/gui/widgets/graph_manager_widget.hpp"
 #include "hesiod/gui/widgets/graph_tabs_widget.hpp"
 #include "hesiod/gui/widgets/gui_utils.hpp"
-#include "hesiod/gui/widgets/menu_repaint_filter.hpp"
+#include "hesiod/gui/widgets/fractional_repaint_filter.hpp"
 #include "hesiod/gui/widgets/project_settings_dialog.hpp"
 #include "hesiod/gui/widgets/scrollable_dialog.hpp"
 #include "hesiod/gui/widgets/splash_screen.hpp"
@@ -103,7 +103,7 @@ HesiodApplication::HesiodApplication(int &argc, char **argv) : QApplication(argc
 
   // --- Continue with GUI
 
-  this->installEventFilter(new MenuRepaintFilter(this));
+  this->installEventFilter(new FractionalRepaintFilter(this));
 
   QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
   QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
